@@ -1,0 +1,4 @@
+// Application-level settings for the Runner target.
+//
+// This may be overridden by target-level settings.
+#include "Warnings.xcconfig"

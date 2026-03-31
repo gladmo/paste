@@ -1,0 +1,1 @@
+WARNING_CFLAGS = -Wall -Wconditional-uninitialized -Wnewline-eof -Wfloat-conversion -Wno-signed-conversion -Wno-implicit-int-float-conversion

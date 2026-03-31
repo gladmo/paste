@@ -173,10 +173,12 @@ class ClipboardService {
         break;
       case ClipboardItemType.image:
         if (item.imageBytes != null) {
-          final writer = ClipboardWriter.instance;
-          await writer.write([
-            DataWriterItem()..add(Formats.png(item.imageBytes!)),
-          ]);
+          final clipboard = SystemClipboard.instance;
+          if (clipboard != null) {
+            await clipboard.write([
+              DataWriterItem()..add(Formats.png(item.imageBytes!)),
+            ]);
+          }
         }
         break;
       case ClipboardItemType.file:
