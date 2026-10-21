@@ -8,11 +8,34 @@ import { THEME } from "../ui/theme";
 import { packedToCss } from "../types";
 import type { Clip, PanelView, Pinboard } from "../types";
 import { initPanelListeners, usePanel } from "../stores/panel";
+import { useSettings } from "../stores/settings";
 import { ClipCard } from "./ClipCard";
 import { ConfirmDialog, Menu } from "./Menu";
 import type { MenuItem } from "./Menu";
 import { SearchBar } from "./SearchBar";
 import { TabBar } from "./TabBar";
+
+/** Configured-modifier check ("cmd" | "ctrl" | "alt" | "shift"). */
+function modActive(e: KeyboardEvent, mod: string): boolean {
+  switch (mod) {
+    case "ctrl":
+      return e.ctrlKey;
+    case "alt":
+      return e.altKey;
+    case "shift":
+      return e.shiftKey;
+    case "cmd":
+    default:
+      return e.metaKey;
+  }
+}
+
+const MOD_KEY_NAMES: Record<string, string[]> = {
+  cmd: ["Meta", "MetaLeft", "MetaRight"],
+  ctrl: ["Control", "ControlLeft", "ControlRight"],
+  alt: ["Alt", "AltLeft", "AltRight"],
+  shift: ["Shift", "ShiftLeft", "ShiftRight"],
+};
 
 /** Fade the panel out, then run the action (hide / paste). */
 function useFadeOut() {
@@ -125,6 +148,11 @@ export function Overlay() {
   // ---- data refresh -------------------------------------------------------
   useEffect(() => {
     void usePanel.getState().refreshBoards();
+    void useSettings.getState().load();
+    const off = listen("settings:updated", () => void useSettings.getState().load());
+    return () => {
+      off.then((fn) => fn());
+    };
   }, []);
   useEffect(() => {
     const timer = setTimeout(() => void usePanel.getState().refresh(), 120);
@@ -190,18 +218,20 @@ export function Overlay() {
     };
   }, [visible.length]);
 
-  // ⌘ modifier state drives the quick-paste number badges.
+  // The configured quick-paste modifier drives the number badges.
   useEffect(() => {
-    const onMeta = (e: KeyboardEvent) => {
-      if (e.key === "Meta" || e.key === "MetaLeft" || e.key === "MetaRight") {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = useSettings.getState().settings.quickPasteModifier;
+      const names = MOD_KEY_NAMES[mod] ?? MOD_KEY_NAMES.cmd;
+      if (names.includes(e.key)) {
         setMetaDown(e.type === "keydown");
       }
     };
-    window.addEventListener("keydown", onMeta);
-    window.addEventListener("keyup", onMeta);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
     return () => {
-      window.removeEventListener("keydown", onMeta);
-      window.removeEventListener("keyup", onMeta);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
     };
   }, [setMetaDown]);
 
@@ -244,7 +274,23 @@ export function Overlay() {
     [boards],
   );
 
+  // Global next/previous pinboard shortcuts and tray "Manage Pinboards".
+  useEffect(() => {
+    const offCycle = listen<number>("panel:cycle", (e) => switchViewDelta(e.payload >= 1 ? 1 : -1));
+    const offManage = listen("panel:manage-pinboards", () => {
+      usePanel.getState().setView("pinned");
+    });
+    return () => {
+      offCycle.then((fn) => fn());
+      offManage.then((fn) => fn());
+    };
+  }, [switchViewDelta]);
+
   // ---- keyboard -----------------------------------------------------------
+  const quickMod = (e: KeyboardEvent) =>
+    modActive(e, useSettings.getState().settings.quickPasteModifier);
+  const plainMod = (e: KeyboardEvent) =>
+    modActive(e, useSettings.getState().settings.plainTextModifier);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const state = usePanel.getState();
@@ -269,11 +315,11 @@ export function Overlay() {
       } else if ((e.key === "Backspace" || e.key === "Delete") && state.selecting && state.selected.length) {
         e.preventDefault();
         setConfirmDeleteSelected(true);
-      } else if (e.metaKey && e.key >= "1" && e.key <= "9") {
+      } else if (e.key >= "1" && e.key <= "9" && quickMod(e)) {
         e.preventDefault();
         const idx = Number(e.key) - 1;
         const clip = state.clips[idx];
-        if (clip) pasteClip(clip.id, e.altKey);
+        if (clip) pasteClip(clip.id, plainMod(e));
       } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
         // Type-to-search: focus the field and insert the character manually
         // (focusing during keydown can swallow the first keystroke in WKWebView).
@@ -300,7 +346,7 @@ export function Overlay() {
         }
       } else if (e.key === "Enter") {
         const clip = state.clips[state.active];
-        if (clip) pasteClip(clip.id, e.altKey);
+        if (clip) pasteClip(clip.id, plainMod(e));
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -337,6 +383,15 @@ export function Overlay() {
               key: "open",
               label: t("replica.menu.open-link"),
               onClick: () => openUrl(clip.content).catch(console.error),
+            },
+          ]
+        : []),
+      ...(clip.contentType === "file"
+        ? [
+            {
+              key: "reveal",
+              label: t("preview.reveal-in-finder.title"),
+              onClick: () => void invoke("reveal_in_finder", { path: clip.content }).catch(console.error),
             },
           ]
         : []),

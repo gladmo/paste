@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod overlay;
 mod paste;
+mod pause;
 mod settings;
 mod stack;
 mod tray;
@@ -10,7 +11,7 @@ mod tray;
 use std::str::FromStr;
 use std::sync::Mutex;
 
-use tauri::Manager;
+use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -19,10 +20,65 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 /// env var overrides it (e.g. "cmd+shift+e") for testing.
 fn global_shortcut() -> Shortcut {
     match std::env::var("PASTE_HOTKEY") {
-        Ok(value) => Shortcut::from_str(&value).unwrap_or_else(|_| {
+        Ok(value) => value.parse::<Shortcut>().unwrap_or_else(|_| {
             Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyV)
         }),
         Err(_) => Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyV),
+    }
+}
+
+fn parse_shortcut(s: &str) -> Option<Shortcut> {
+    s.parse::<Shortcut>().ok()
+}
+
+/// (Re-)register every global shortcut from the current settings. Old
+/// registrations are cleared first so changed combos never stay stuck.
+fn register_all_shortcuts(app: &tauri::AppHandle) {
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+    let s = settings::load(app);
+
+    let activation = parse_shortcut(&s.activation_shortcut)
+        .unwrap_or_else(global_shortcut);
+    if let Err(e) = gs.on_shortcut(activation, |app, _s, e| {
+        if e.state() == ShortcutState::Pressed {
+            overlay::toggle(app);
+        }
+    }) {
+        eprintln!("warning: failed to register activation hotkey ({e})");
+    }
+
+    let stack = parse_shortcut(&s.paste_stack_shortcut)
+        .unwrap_or_else(|| Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SUPER), Code::KeyV));
+    if let Err(e) = gs.on_shortcut(stack, |app, _s, e| {
+        if e.state() == ShortcutState::Pressed {
+            stack::toggle(app);
+        }
+    }) {
+        eprintln!("warning: failed to register stack hotkey ({e})");
+    }
+
+    let next = parse_shortcut(&s.next_pinboard_shortcut);
+    if let Some(sc) = next {
+        let _ = gs.on_shortcut(sc, |app, _s, e| {
+            if e.state() == ShortcutState::Pressed {
+                overlay::show(app);
+                if let Some(w) = app.get_webview_window("overlay") {
+                    let _ = w.emit("panel:cycle", 1i32);
+                }
+            }
+        });
+    }
+    let prev = parse_shortcut(&s.previous_pinboard_shortcut);
+    if let Some(sc) = prev {
+        let _ = gs.on_shortcut(sc, |app, _s, e| {
+            if e.state() == ShortcutState::Pressed {
+                overlay::show(app);
+                if let Some(w) = app.get_webview_window("overlay") {
+                    let _ = w.emit("panel:cycle", -1i32);
+                }
+            }
+        });
     }
 }
 
@@ -61,32 +117,25 @@ pub fn run() {
             if let Err(e) = tray::create_tray(app.handle()) {
                 eprintln!("tray init error: {e}");
             }
+            tray::apply_visibility(app.handle(), &settings::load(app.handle()));
 
-            // on_shortcut registers the shortcut AND attaches the handler; do
-            // NOT call register() again, it fails with eventHotKeyExistsErr.
-            if let Err(e) = app.global_shortcut().on_shortcut(global_shortcut(), |app, _s, e| {
-                if e.state() == ShortcutState::Pressed {
-                    overlay::toggle(app);
-                }
-            }) {
-                eprintln!("warning: failed to register hotkey ({e}); use the tray icon instead");
-            }
+            register_all_shortcuts(app.handle());
 
-            // Paste Stack toggle: ⌃⌘V by default (configurable in Settings).
-            let stack_shortcut = settings::load(app.handle())
-                .paste_stack_shortcut
-                .parse::<Shortcut>()
-                .unwrap_or(Shortcut::new(
-                    Some(Modifiers::CONTROL | Modifiers::SUPER),
-                    Code::KeyV,
-                ));
-            if let Err(e) = app.global_shortcut().on_shortcut(stack_shortcut, |app, _s, e| {
-                if e.state() == ShortcutState::Pressed {
-                    stack::toggle(app);
+            // Re-apply settings whenever they change (shortcuts, tray icon,
+            // retention cleanup).
+            let handle = app.handle().clone();
+            app.listen("settings:updated", move |_event| {
+                register_all_shortcuts(&handle);
+                let s = settings::load(&handle);
+                tray::apply_visibility(&handle, &s);
+                if let (Ok(mut db), Some(cutoff)) = (
+                    handle.state::<Mutex<db::Db>>().lock(),
+                    db::Db::capacity_cutoff(&s.history_capacity),
+                ) {
+                    let _ = db.enforce_capacity(Some(cutoff));
                 }
-            }) {
-                eprintln!("warning: failed to register stack hotkey ({e})");
-            }
+                tray::rebuild_menu(&handle);
+            });
 
             clipboard::spawn_watcher(app.handle().clone());
 
@@ -126,6 +175,8 @@ pub fn run() {
             commands::stack_toggle,
             commands::stack_hide,
             commands::stack_paste,
+            pause::pause_status,
+            commands::reveal_in_finder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

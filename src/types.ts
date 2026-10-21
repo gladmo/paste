@@ -14,6 +14,8 @@ export interface Clip {
   pinnedAt?: number | null;
   pinboardId?: number | null;
   displayOrder?: number | null;
+  /** Type metadata JSON: file {fileCount,totalSize}, image dims, color hex. */
+  meta?: string | null;
 }
 
 export interface Pinboard {

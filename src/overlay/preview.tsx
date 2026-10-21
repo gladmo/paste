@@ -179,6 +179,38 @@ export function CardPreview({ clip }: { clip: Clip }) {
       </div>
     );
   }
+  if (clip.contentType === "file") {
+    const paths = (clip.plainContent ?? clip.content).split("\n").filter(Boolean);
+    return (
+      <div className="min-h-0 flex-1 space-y-1 overflow-hidden p-2">
+        {paths.slice(0, 4).map((p) => (
+          <p key={p} className="truncate text-[12px]" style={{ color: "#dcdcdc" }}>
+            {p.split("/").pop()}
+          </p>
+        ))}
+        {paths.length > 4 && (
+          <p className="text-[11px] text-neutral-500">+{paths.length - 4}</p>
+        )}
+      </div>
+    );
+  }
+  if (clip.contentType === "color") {
+    let hex = "#4da3ff";
+    try {
+      const m = clip.meta ? JSON.parse(clip.meta) : null;
+      if (m?.color) hex = m.color;
+    } catch {
+      /* keep default */
+    }
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-3">
+        <div
+          className="h-full w-full rounded-[8px] ring-1 ring-inset ring-[rgba(255,255,255,0.2)]"
+          style={{ backgroundColor: hex }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="min-h-0 flex-1 overflow-hidden rounded-[8px] bg-[rgba(255,255,255,0.04)] p-2">
       <p
@@ -191,13 +223,41 @@ export function CardPreview({ clip }: { clip: Clip }) {
   );
 }
 
-/** Card footer meta: image dims + byte size / char count / link domain. */
+/** Card footer meta: image dims + byte size / char count / link domain / file info. */
 export function CardContentMeta({ clip }: { clip: Clip }) {
   if (clip.contentType === "image") {
     return <ImageMeta src={convertFileSrc(clip.content)} />;
   }
   if (clip.contentType === "link") {
     return <span className="truncate">{clip.title || linkDomain(clip.content)}</span>;
+  }
+  if (clip.contentType === "file") {
+    const paths = (clip.plainContent ?? clip.content).split("\n").filter(Boolean);
+    let size = "";
+    try {
+      const m = clip.meta ? JSON.parse(clip.meta) : null;
+      if (m?.totalSize) size = ` · ${formatSize(m.totalSize as number)}`;
+    } catch {
+      /* ignore */
+    }
+    const label =
+      paths.length > 1 ? `${paths.length} files` : (paths[0]?.split(".").pop() ?? "file");
+    return (
+      <span className="truncate">
+        {label}
+        {size}
+      </span>
+    );
+  }
+  if (clip.contentType === "color") {
+    let hex = clip.content;
+    try {
+      const m = clip.meta ? JSON.parse(clip.meta) : null;
+      if (m?.color) hex = m.color as string;
+    } catch {
+      /* ignore */
+    }
+    return <span className="truncate uppercase">{hex}</span>;
   }
   return (
     <span className="truncate">

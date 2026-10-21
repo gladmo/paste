@@ -343,6 +343,12 @@ pub fn open_create(app: AppHandle) {
     }
 }
 
+/// Reveal a file/folder in Finder (context menu action for file clips).
+#[tauri::command]
+pub fn reveal_in_finder(path: String) {
+    let _ = std::process::Command::new("open").args(["-R", &path]).spawn();
+}
+
 // ---- Paste Stack ----
 
 #[tauri::command]
@@ -368,6 +374,7 @@ pub fn stack_paste(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), St
     drop(db);
     let settings = crate::settings::load(&app);
     write_clip(&app, &clip, settings.always_plain_text)?;
+    crate::pause::play_paste(&app);
     crate::stack::hide(&app);
     if settings.direct_paste {
         std::thread::spawn(move || {
@@ -398,6 +405,7 @@ pub fn paste_clip(
     let settings = crate::settings::load(&app);
     let plain = plain.unwrap_or(false) || settings.always_plain_text;
     write_clip(&app, &clip, plain)?;
+    crate::pause::play_paste(&app);
 
     crate::overlay::hide(&app);
 
@@ -421,6 +429,8 @@ pub fn paste_clip(
 fn write_clip(app: &AppHandle, clip: &Clip, plain: bool) -> Result<(), String> {
     match clip.content_type.as_str() {
         "image" => write_image_clip(app, clip),
+        "color" => write_color_clip(clip),
+        "file" => write_file_clip(clip),
         "richtext" if !plain => write_rich_clip(app, clip),
         _ => {
             let text = if clip.content_type == "richtext" {
@@ -431,6 +441,62 @@ fn write_clip(app: &AppHandle, clip: &Clip, plain: bool) -> Result<(), String> {
             write_text(app, clip, &text)
         }
     }
+}
+
+/// Put an archived NSColor back on the pasteboard (raw bytes kept in `rtf`).
+fn write_color_clip(clip: &Clip) -> Result<(), String> {
+    let bytes = clip
+        .rtf
+        .as_deref()
+        .map(|b64| BASE64.decode(b64))
+        .transpose()
+        .map_err(|e| format!("color decode: {e}"))?
+        .unwrap_or_default();
+    let pb = NSPasteboard::generalPasteboard();
+    pb.clearContents();
+    let data = NSData::with_bytes(&bytes);
+    let ok = pb.setData_forType(Some(&data), unsafe { objc2_app_kit::NSPasteboardTypeColor });
+    if !ok {
+        return Err("pasteboard color write failed".to_string());
+    }
+    crate::clipboard::mark_last_seen(&bytes);
+    Ok(())
+}
+
+/// Put file references back on the pasteboard: a public.file-url entry plus
+/// the plain-text path list for apps that only read text.
+fn write_file_clip(clip: &Clip) -> Result<(), String> {
+    let paths: Vec<&str> = clip
+        .plain_content
+        .as_deref()
+        .unwrap_or(&clip.content)
+        .split('\n')
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    if paths.is_empty() {
+        return write_text_no_clip(&clip.content);
+    }
+    let pb = NSPasteboard::generalPasteboard();
+    pb.clearContents();
+    let urls = paths
+        .iter()
+        .map(|p| format!("file://{p}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let data = NSData::with_bytes(urls.as_bytes());
+    let _ = pb.setData_forType(Some(&data), &NSString::from_str("public.file-url"));
+    let plain = NSString::from_str(&paths.join("\n"));
+    let _ = pb.setString_forType(&plain, unsafe { NSPasteboardTypeString });
+    crate::clipboard::mark_last_seen(urls.as_bytes());
+    Ok(())
+}
+
+fn write_text_no_clip(text: &str) -> Result<(), String> {
+    let pb = NSPasteboard::generalPasteboard();
+    pb.clearContents();
+    let s = NSString::from_str(text);
+    let _ = pb.setString_forType(&s, unsafe { NSPasteboardTypeString });
+    Ok(())
 }
 
 /// Put plain text on the clipboard (text/link clips, or rich clips pasted

@@ -32,6 +32,8 @@ pub struct Clip {
     pub pinboard_id: Option<i64>,
     /// Ordering inside the pinboard (insert time by default; drag-reorder later).
     pub display_order: Option<i64>,
+    /// Extra type metadata as JSON (file count/size, image size, color hex).
+    pub meta: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -144,6 +146,9 @@ impl Db {
         if !cols.iter().any(|c| c == "display_order") {
             conn.execute("ALTER TABLE clips ADD COLUMN display_order INTEGER", [])?;
         }
+        if !cols.iter().any(|c| c == "meta") {
+            conn.execute("ALTER TABLE clips ADD COLUMN meta TEXT", [])?;
+        }
         // Built-in Pinned pinboard with the fixed well-known row id.
         let pinned_board: Option<i64> = conn
             .query_row(
@@ -213,18 +218,20 @@ impl Db {
             pinned_at: row.get(10)?,
             pinboard_id: row.get(11)?,
             display_order: row.get(12)?,
+            meta: row.get(13)?,
         })
     }
 
     const CLIP_COLS: &'static str = "id, content_type, content, plain_content, rtf, title, \
                                      copied_at, pinned, source_app, source_name, pinned_at, \
-                                     pinboard_id, display_order";
+                                     pinboard_id, display_order, meta";
 
     /// Insert a clip. `plain_content` is the searchable plain-text form
     /// (equal to `content` for text / link / image); `rtf` holds the
     /// original RTF bytes (base64) of rich text clips for format-preserving
     /// paste. Returns the new row id, or None when it is a consecutive
     /// duplicate of the most recent clip.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert(
         &mut self,
         content_type: &str,
@@ -232,6 +239,7 @@ impl Db {
         plain_content: &str,
         rtf: Option<&str>,
         title: Option<&str>,
+        meta: Option<&str>,
         source_app: Option<&str>,
         source_name: Option<&str>,
     ) -> rusqlite::Result<Option<i64>> {
@@ -248,9 +256,9 @@ impl Db {
         }
         let copied_at = now_ms();
         self.0.execute(
-            "INSERT INTO clips (content_type, content, plain_content, rtf, title, copied_at, source_app, source_name)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![content_type, content, plain_content, rtf, title, copied_at, source_app, source_name],
+            "INSERT INTO clips (content_type, content, plain_content, rtf, title, meta, copied_at, source_app, source_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![content_type, content, plain_content, rtf, title, meta, copied_at, source_app, source_name],
         )?;
         Ok(Some(self.0.last_insert_rowid()))
     }
@@ -290,7 +298,7 @@ impl Db {
 
     /// Insert a new text clip created by the user (Create Item flow).
     pub fn insert_text_clip(&mut self, text: &str) -> rusqlite::Result<Option<i64>> {
-        self.insert("text", text, text, None, None, None, None)
+        self.insert("text", text, text, None, None, None, None, None)
     }
 
     pub fn recent(&self, limit: i64) -> rusqlite::Result<Vec<Clip>> {
@@ -405,6 +413,30 @@ impl Db {
             [],
         )?;
         Ok(n)
+    }
+
+    /// Delete unpinned, non-pinboard clips older than the cutoff
+    /// ("Keep History" retention). None = keep forever.
+    pub fn enforce_capacity(&mut self, cutoff_ms: Option<i64>) -> rusqlite::Result<usize> {
+        let Some(cutoff) = cutoff_ms else {
+            return Ok(0);
+        };
+        let n = self.0.execute(
+            "DELETE FROM clips WHERE pinned = 0 AND pinboard_id IS NULL AND copied_at < ?1",
+            params![cutoff],
+        )?;
+        Ok(n)
+    }
+
+    /// Cutoff timestamp for a history capacity setting, in unix ms.
+    pub fn capacity_cutoff(capacity: &str) -> Option<i64> {
+        let now = now_ms();
+        match capacity {
+            "1day" => Some(now - 86_400_000),
+            "1week" => Some(now - 7 * 86_400_000),
+            "1month" => Some(now - 30 * 86_400_000),
+            _ => None, // forever
+        }
     }
 
     pub fn toggle_pin(&mut self, id: i64) -> rusqlite::Result<()> {
