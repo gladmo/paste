@@ -2,7 +2,6 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use core_graphics::display::CGDisplay;
-use objc2_foundation::NSNotification;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
 use tauri_nspanel::{
     tauri_panel, ManagerExt, PanelBuilder, PanelLevel, StyleMask,
@@ -39,7 +38,7 @@ fn watch_frontmost(app: &AppHandle) {
     let handle = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(400));
-        let Some(panel) = handle.get_webview_panel(PANEL_LABEL) else {
+        let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) else {
             return;
         };
         if !panel.is_visible() {
@@ -56,7 +55,7 @@ fn watch_frontmost(app: &AppHandle) {
 
 /// Create the stack panel if needed (hidden).
 fn ensure_panel(app: &AppHandle) {
-    if app.get_webview_panel(PANEL_LABEL).is_some() {
+    if app.get_webview_panel(PANEL_LABEL).is_ok() {
         return;
     }
     let builder = PanelBuilder::<_, StackPanel>::new(app, PANEL_LABEL)
@@ -68,7 +67,7 @@ fn ensure_panel(app: &AppHandle) {
     if let Err(e) = builder.build() {
         eprintln!("stack panel error: {e}");
     }
-    if let Some(panel) = app.get_webview_panel(PANEL_LABEL) {
+    if let Ok(panel) = app.get_webview_panel(PANEL_LABEL) {
         panel.hide();
     }
     watch_frontmost(app);
@@ -111,7 +110,7 @@ pub fn show(app: &AppHandle) {
     position(app);
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Some(panel) = handle.get_webview_panel(PANEL_LABEL) {
+        if let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) {
             panel.show_and_make_key();
         }
         if let Some(window) = handle.get_webview_window(PANEL_LABEL) {
@@ -126,7 +125,7 @@ pub fn hide(app: &AppHandle) {
         if let Some(window) = handle.get_webview_window(PANEL_LABEL) {
             let _ = window.emit("stack:hide", ());
         }
-        if let Some(panel) = handle.get_webview_panel(PANEL_LABEL) {
+        if let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) {
             panel.hide();
         }
     });

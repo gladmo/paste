@@ -525,13 +525,16 @@ impl Db {
     /// Delete a pinboard together with its content (original behavior:
     /// "The Pinboard and all its content will be deleted"). The built-in
     /// Pinned board cannot be deleted.
-    pub fn delete_pinboard(&mut self, id: i64) -> rusqlite::Result<()> {
+    pub fn delete_pinboard(&mut self, id: i64) -> Result<(), String> {
         if id == BUILTIN_PINNED_ID {
-            return Err(rusqlite::Error::InvalidParameter);
+            return Err("cannot delete the Pinned board".to_string());
         }
         self.0
-            .execute("DELETE FROM clips WHERE pinboard_id = ?1", params![id])?;
-        self.0.execute("DELETE FROM pinboards WHERE id = ?1", params![id])?;
+            .execute("DELETE FROM clips WHERE pinboard_id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        self.0
+            .execute("DELETE FROM pinboards WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }

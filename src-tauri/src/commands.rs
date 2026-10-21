@@ -123,8 +123,7 @@ pub fn set_pinboard_color(
 pub fn delete_pinboard(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), String> {
     {
         let mut db = state.lock().map_err(|e| e.to_string())?;
-        db.delete_pinboard(id)
-            .map_err(|e| e.to_string().replace("Invalid parameter", "cannot delete the Pinned board"))?;
+        db.delete_pinboard(id)?;
     }
     let _ = app.emit("pinboards:updated", ());
     let _ = app.emit("clips:updated", ());
@@ -309,7 +308,7 @@ pub fn open_preview(app: AppHandle, id: i64) {
     let builder = tauri::WebviewWindowBuilder::new(
         &app,
         "preview",
-        tauri::WebviewUrl::App(format!("index.html#/preview?id={id}")),
+        tauri::WebviewUrl::App(format!("index.html#/preview?id={id}").into()),
     )
     .title("Paste")
     .inner_size(460.0, 400.0)

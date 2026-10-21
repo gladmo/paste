@@ -12,6 +12,8 @@ pnpm tauri build   # 产出 .app / .dmg
 
 > 首次运行需要授予「辅助功能」权限（直接粘贴到其他应用需要；未授权时自动回退到 post_to_pid）。
 
+Rust 后端已在 Linux 上用 `aarch64-apple-darwin` 目标 + zig 交叉 C 编译器完成全量 `cargo check`（零错误零警告）；最终链接与运行仍需在 Mac 上执行 `pnpm tauri dev/build`。
+
 ## 功能
 
 | 区域 | 能力 |
@@ -65,5 +67,6 @@ src-tauri/src/
 
 - `gen_i18n.py` — 从 `Paste.zip` 重新生成三语资源
 - `extract_assets.py` — 提取音效与 AppIcon.icns
+- `check-darwin.sh` — 在 Linux 上交叉类型检查 macOS 后端（zig + darwin std）
 
 验收清单见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。

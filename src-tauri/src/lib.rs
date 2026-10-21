@@ -8,7 +8,6 @@ mod settings;
 mod stack;
 mod tray;
 
-use std::str::FromStr;
 use std::sync::Mutex;
 
 use tauri::{Emitter, Listener, Manager};

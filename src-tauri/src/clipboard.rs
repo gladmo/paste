@@ -299,7 +299,7 @@ fn pb_declares(pb: &NSPasteboard, marker: &str) -> bool {
     let ns_marker = NSString::from_str(marker);
     if let Some(types) = pb.types() {
         for ty in types.iter() {
-            if ty == &ns_marker {
+            if ty == ns_marker {
                 return true;
             }
         }

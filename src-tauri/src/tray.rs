@@ -10,7 +10,7 @@ fn open_url(app: &AppHandle, url: &str) {
     let _ = app; // silence unused when compiled without this helper's callers
 }
 
-fn build_menu(app: &AppHandle) -> tauri::Result<Menu> {
+fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(app, "toggle", "Show Paste", true, None::<&str>)?;
 
     // Pause Paste: either a submenu of durations or a Resume item.

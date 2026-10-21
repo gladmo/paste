@@ -147,17 +147,16 @@ pub fn running_apps(app: AppHandle) -> Vec<RunningApp> {
     use objc2_app_kit::NSWorkspace;
     let own = app.config().identifier.clone();
     let mut out: Vec<RunningApp> = Vec::new();
-    if let Some(list) = NSWorkspace::sharedWorkspace().runningApplications() {
-        for app in list.iter() {
-            let Some(bundle) = app.bundleIdentifier().map(|s| s.to_string()) else {
-                continue;
-            };
-            if bundle.is_empty() || Some(bundle.as_str()) == own.as_deref() {
-                continue;
-            }
-            let name = app.localizedName().map(|s| s.to_string()).unwrap_or_else(|| bundle.clone());
-            out.push(RunningApp { bundle_id: bundle, name });
+    let list = NSWorkspace::sharedWorkspace().runningApplications();
+    for app in list.iter() {
+        let Some(bundle) = app.bundleIdentifier().map(|s| s.to_string()) else {
+            continue;
+        };
+        if bundle.is_empty() || bundle == own {
+            continue;
         }
+        let name = app.localizedName().map(|s| s.to_string()).unwrap_or_else(|| bundle.clone());
+        out.push(RunningApp { bundle_id: bundle, name });
     }
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     out.dedup_by(|a, b| a.bundle_id == b.bundle_id);
