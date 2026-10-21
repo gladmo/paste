@@ -7,7 +7,7 @@ use objc2_foundation::{NSData, NSString};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-use crate::db::{Clip, Db};
+use crate::db::{Clip, Db, Pinboard};
 
 type DbState<'a> = State<'a, Mutex<Db>>;
 
@@ -18,7 +18,6 @@ fn map_db_err(e: rusqlite::Error) -> String {
 /// Hide the overlay panel (used by the frontend, e.g. on Esc).
 #[tauri::command]
 pub fn hide_overlay(app: AppHandle) {
-    crate::paste::log_info("[debug] hide_overlay invoked");
     crate::overlay::hide(&app);
 }
 
@@ -34,9 +33,22 @@ pub fn recent_clips(state: DbState<'_>, limit: Option<i64>) -> Result<Vec<Clip>,
     db.recent(limit.unwrap_or(100)).map_err(map_db_err)
 }
 
+/// Clips for one panel view: "history" | "pinned" | "board".
+#[tauri::command]
+pub fn view_clips(
+    state: DbState<'_>,
+    view: String,
+    pinboard_id: Option<i64>,
+    query: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<Clip>, String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    db.query_view(&view, pinboard_id, query.as_deref(), limit.unwrap_or(200))
+        .map_err(map_db_err)
+}
+
 #[tauri::command]
 pub fn pinned_clips(state: DbState<'_>, limit: Option<i64>) -> Result<Vec<Clip>, String> {
-    crate::paste::log_info("[debug] pinned_clips invoked");
     let db = state.lock().map_err(|e| e.to_string())?;
     db.pinned_clips(limit.unwrap_or(100)).map_err(map_db_err)
 }
@@ -51,6 +63,89 @@ pub fn app_icon(app: AppHandle, bundle_id: String) -> Option<String> {
 pub fn search_clips(state: DbState<'_>, query: String) -> Result<Vec<Clip>, String> {
     let db = state.lock().map_err(|e| e.to_string())?;
     db.search(&query, 100).map_err(map_db_err)
+}
+
+// ---- pinboards ----
+
+#[tauri::command]
+pub fn list_pinboards(state: DbState<'_>) -> Result<Vec<Pinboard>, String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    db.list_pinboards().map_err(map_db_err)
+}
+
+#[tauri::command]
+pub fn create_pinboard(
+    app: AppHandle,
+    state: DbState<'_>,
+    name: String,
+    color: Option<i64>,
+) -> Result<Pinboard, String> {
+    let board = {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.create_pinboard(&name, color.unwrap_or(0xb663e0))
+            .map_err(map_db_err)?
+    };
+    let _ = app.emit("pinboards:updated", ());
+    Ok(board)
+}
+
+#[tauri::command]
+pub fn rename_pinboard(
+    app: AppHandle,
+    state: DbState<'_>,
+    id: i64,
+    name: String,
+) -> Result<(), String> {
+    {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.rename_pinboard(id, &name).map_err(map_db_err)?;
+    }
+    let _ = app.emit("pinboards:updated", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_pinboard_color(
+    app: AppHandle,
+    state: DbState<'_>,
+    id: i64,
+    color: i64,
+) -> Result<(), String> {
+    {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.set_pinboard_color(id, color).map_err(map_db_err)?;
+    }
+    let _ = app.emit("pinboards:updated", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_pinboard(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), String> {
+    {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.delete_pinboard(id)
+            .map_err(|e| e.to_string().replace("Invalid parameter", "cannot delete the Pinned board"))?;
+    }
+    let _ = app.emit("pinboards:updated", ());
+    let _ = app.emit("clips:updated", ());
+    Ok(())
+}
+
+/// Move a clip into a pinboard (pinboard_id None returns it to history).
+#[tauri::command]
+pub fn move_clip_to_pinboard(
+    app: AppHandle,
+    state: DbState<'_>,
+    id: i64,
+    pinboard_id: Option<i64>,
+) -> Result<(), String> {
+    {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.move_clip_to_pinboard(id, pinboard_id)
+            .map_err(map_db_err)?;
+    }
+    let _ = app.emit("clips:updated", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -73,10 +168,51 @@ pub fn delete_clip(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), St
     Ok(())
 }
 
+/// Batch delete (multi-select).
+#[tauri::command]
+pub fn delete_clips(app: AppHandle, state: DbState<'_>, ids: Vec<i64>) -> Result<(), String> {
+    {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.delete_many(&ids).map_err(map_db_err)?;
+    }
+    let _ = app.emit("clips:updated", ());
+    Ok(())
+}
+
+/// Erase the clipboard history; pinned items and pinboards are kept.
+#[tauri::command]
+pub fn erase_history(app: AppHandle, state: DbState<'_>) -> Result<(), String> {
+    {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.erase_history().map_err(map_db_err)?;
+    }
+    let _ = app.emit("clips:updated", ());
+    Ok(())
+}
+
+/// Copy a clip to the clipboard without pasting (context menu "Copy").
+#[tauri::command]
+pub fn copy_clip(app: AppHandle, state: DbState<'_>, id: i64, plain: Option<bool>) -> Result<(), String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let clip = db
+        .get_clip(id)
+        .map_err(map_db_err)?
+        .ok_or_else(|| "clip not found".to_string())?;
+    drop(db);
+    write_clip(&app, &clip, plain.unwrap_or(false))?;
+    Ok(())
+}
+
 /// Put the clip back on the clipboard (text / link / image), hide the panel,
 /// then send ⌘V to the app that was frontmost before the overlay.
+/// `plain` pastes the plain-text representation only.
 #[tauri::command]
-pub fn paste_clip(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), String> {
+pub fn paste_clip(
+    app: AppHandle,
+    state: DbState<'_>,
+    id: i64,
+    plain: Option<bool>,
+) -> Result<(), String> {
     let db = state.lock().map_err(|e| e.to_string())?;
     let clip = db
         .get_clip(id)
@@ -84,11 +220,7 @@ pub fn paste_clip(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), Str
         .ok_or_else(|| "clip not found".to_string())?;
     drop(db);
 
-    match clip.content_type.as_str() {
-        "image" => write_image_clip(&app, &clip)?,
-        "richtext" => write_rich_clip(&app, &clip)?,
-        _ => write_text_clip(&app, &clip)?,
-    }
+    write_clip(&app, &clip, plain.unwrap_or(false))?;
 
     crate::overlay::hide(&app);
 
@@ -103,12 +235,37 @@ pub fn paste_clip(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), Str
     Ok(())
 }
 
-/// Put a text/link clip on the clipboard as plain text.
-fn write_text_clip(app: &AppHandle, clip: &Clip) -> Result<(), String> {
+/// Write a clip onto the system pasteboard according to its type.
+fn write_clip(app: &AppHandle, clip: &Clip, plain: bool) -> Result<(), String> {
+    match clip.content_type.as_str() {
+        "image" => write_image_clip(app, clip),
+        "richtext" if !plain => write_rich_clip(app, clip),
+        _ => {
+            let text = if clip.content_type == "richtext" {
+                clip.plain_content.clone().unwrap_or_default()
+            } else {
+                clip.content.clone()
+            };
+            write_text(app, clip, &text)
+        }
+    }
+}
+
+/// Put plain text on the clipboard (text/link clips, or rich clips pasted
+/// as plain text).
+fn write_text(app: &AppHandle, clip: &Clip, text: &str) -> Result<(), String> {
     app.clipboard()
-        .write_text(&clip.content)
+        .write_text(text)
         .map_err(|e| e.to_string())?;
-    crate::clipboard::mark_last_seen(clip.content.as_bytes());
+    crate::clipboard::mark_last_seen(text.as_bytes());
+    // Keep dedup consistent for rich clips pasted as plain text.
+    if clip.content_type == "richtext" {
+        if let Some(rtf) = clip.rtf.as_deref() {
+            if let Ok(bytes) = BASE64.decode(rtf) {
+                crate::clipboard::mark_last_seen(&bytes);
+            }
+        }
+    }
     Ok(())
 }
 

@@ -4,6 +4,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
+/// Row id of the built-in "Pinned" pinboard (created by the migration).
+pub const BUILTIN_PINNED_ID: i64 = 1;
+
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Clip {
@@ -25,9 +28,31 @@ pub struct Clip {
     pub source_name: Option<String>,
     /// When the clip was pinned (None = not pinned). Pinned list orders by this.
     pub pinned_at: Option<i64>,
+    /// Owning pinboard (None = plain history item).
+    pub pinboard_id: Option<i64>,
+    /// Ordering inside the pinboard (insert time by default; drag-reorder later).
+    pub display_order: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Pinboard {
+    pub id: i64,
+    pub name: String,
+    /// Packed 0xRRGGBB color of the pinboard tab icon.
+    pub color: i64,
+    pub display_order: i64,
+    pub created_at: i64,
 }
 
 pub struct Db(Connection);
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_millis() as i64
+}
 
 impl Db {
     pub fn open(app: &AppHandle) -> rusqlite::Result<Self> {
@@ -52,6 +77,14 @@ impl Db {
             );
             CREATE INDEX IF NOT EXISTS idx_clips_copied_at ON clips(copied_at DESC);
 
+            CREATE TABLE IF NOT EXISTS pinboards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                color INTEGER NOT NULL DEFAULT 0,
+                display_order INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+
             CREATE VIRTUAL TABLE IF NOT EXISTS clips_fts USING fts5(
                 plain_content,
                 content='clips',
@@ -72,7 +105,7 @@ impl Db {
             END;
             "#,
         )?;
-        // Add the title column to databases created before it existed.
+        // Add columns introduced after the first schema (older databases).
         let cols: Vec<String> = conn
             .prepare("PRAGMA table_info(clips)")?
             .query_map([], |r| r.get::<_, String>(1))?
@@ -103,6 +136,27 @@ impl Db {
             conn.execute(
                 "UPDATE clips SET pinned_at = copied_at WHERE pinned = 1",
                 [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "pinboard_id") {
+            conn.execute("ALTER TABLE clips ADD COLUMN pinboard_id INTEGER", [])?;
+        }
+        if !cols.iter().any(|c| c == "display_order") {
+            conn.execute("ALTER TABLE clips ADD COLUMN display_order INTEGER", [])?;
+        }
+        // Built-in Pinned pinboard with the fixed well-known row id.
+        let pinned_board: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM pinboards WHERE id = ?1",
+                params![BUILTIN_PINNED_ID],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if pinned_board.is_none() {
+            conn.execute(
+                "INSERT INTO pinboards (id, name, color, display_order, created_at)
+                 VALUES (?1, 'Pinned', ?2, 0, ?3)",
+                params![BUILTIN_PINNED_ID, 0xef554d, now_ms()],
             )?;
         }
         // Databases whose FTS still points at `content` (pre-rich-text
@@ -157,11 +211,14 @@ impl Db {
             source_app: row.get(8)?,
             source_name: row.get(9)?,
             pinned_at: row.get(10)?,
+            pinboard_id: row.get(11)?,
+            display_order: row.get(12)?,
         })
     }
 
     const CLIP_COLS: &'static str = "id, content_type, content, plain_content, rtf, title, \
-                                     copied_at, pinned, source_app, source_name, pinned_at";
+                                     copied_at, pinned, source_app, source_name, pinned_at, \
+                                     pinboard_id, display_order";
 
     /// Insert a clip. `plain_content` is the searchable plain-text form
     /// (equal to `content` for text / link / image); `rtf` holds the
@@ -189,10 +246,7 @@ impl Db {
         if last.as_ref().map(|(t, c)| (t.as_str(), c.as_str())) == Some((content_type, content)) {
             return Ok(None);
         }
-        let copied_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_millis() as i64;
+        let copied_at = now_ms();
         self.0.execute(
             "INSERT INTO clips (content_type, content, plain_content, rtf, title, copied_at, source_app, source_name)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -210,65 +264,75 @@ impl Db {
     }
 
     pub fn recent(&self, limit: i64) -> rusqlite::Result<Vec<Clip>> {
-        let mut stmt = self.0.prepare(&format!(
-            "SELECT {cols}
-             FROM clips
-             ORDER BY copied_at DESC, id DESC
-             LIMIT ?1",
-            cols = Self::CLIP_COLS
-        ))?;
-        let rows = stmt.query_map(params![limit], Self::row_to_clip)?;
-        rows.collect()
+        self.history(None, limit)
+    }
+
+    /// History view: items without a pinboard, pinned items floated to the top.
+    pub fn history(&self, query: Option<&str>, limit: i64) -> rusqlite::Result<Vec<Clip>> {
+        self.query_view("history", None, query, limit)
     }
 
     pub fn pinned_clips(&self, limit: i64) -> rusqlite::Result<Vec<Clip>> {
-        let mut stmt = self.0.prepare(&format!(
-            "SELECT {cols}
-             FROM clips
-             WHERE pinned = 1
-             ORDER BY pinned_at DESC, id DESC
-             LIMIT ?1",
-            cols = Self::CLIP_COLS
-        ))?;
-        let rows = stmt.query_map(params![limit], Self::row_to_clip)?;
-        rows.collect()
+        self.query_view("pinned", None, None, limit)
     }
 
     pub fn search(&self, query: &str, limit: i64) -> rusqlite::Result<Vec<Clip>> {
-        if query.trim().is_empty() {
-            return self.recent(limit);
-        }
-        // Trigram FTS5 needs 3+ characters; fall back to LIKE for short queries.
-        let rows = if query.chars().count() >= 3 {
-            let escaped = query.replace('"', "\"\"");
-            let q = format!("\"{escaped}\"");
-            let mut stmt = self.0.prepare(&format!(
-                "SELECT c.{cols}
-                 FROM clips_fts f
-                 JOIN clips c ON c.id = f.rowid
-                 WHERE clips_fts MATCH ?1
-                 ORDER BY c.copied_at DESC, c.id DESC
-                 LIMIT ?2",
-                cols = Self::CLIP_COLS
-            ))?;
-            let results = stmt
-                .query_map(params![q, limit], Self::row_to_clip)?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            results
+        self.history(Some(query), limit)
+    }
+
+    /// View query shared by the panel tabs.
+    /// view: "history" | "pinned" | "board" (board requires pinboard_id).
+    pub fn query_view(
+        &self,
+        view: &str,
+        pinboard_id: Option<i64>,
+        query: Option<&str>,
+        limit: i64,
+    ) -> rusqlite::Result<Vec<Clip>> {
+        let filter = match (view, pinboard_id) {
+            ("pinned", _) => "c.pinned = 1".to_string(),
+            ("board", Some(id)) => format!("c.pinboard_id = {id}"),
+            _ => "c.pinboard_id IS NULL".to_string(),
+        };
+        let order = if view == "board" {
+            "c.display_order ASC, c.copied_at DESC, c.id DESC"
         } else {
-            let pattern = format!("%{}%", query.replace(['%', '_', '\\'], "\\$0"));
-            let mut stmt = self.0.prepare(&format!(
-                "SELECT {cols}
-                 FROM clips
-                 WHERE plain_content LIKE ?1 ESCAPE '\\'
-                 ORDER BY copied_at DESC, id DESC
-                 LIMIT ?2",
-                cols = Self::CLIP_COLS
-            ))?;
-            let results = stmt
-                .query_map(params![pattern, limit], Self::row_to_clip)?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            results
+            "c.pinned DESC, CASE WHEN c.pinned = 1 THEN IFNULL(c.pinned_at, c.copied_at) \
+             ELSE c.copied_at END DESC, c.id DESC"
+        };
+        let q = query.map(str::trim).filter(|q| !q.is_empty());
+        let cols = Self::CLIP_COLS;
+        let sql = match q {
+            Some(q) if q.chars().count() >= 3 => format!(
+                "SELECT c.{cols} FROM clips_fts f
+                 JOIN clips c ON c.id = f.rowid
+                 WHERE clips_fts MATCH ?1 AND {filter}
+                 ORDER BY {order} LIMIT ?2"
+            ),
+            Some(_) => format!(
+                "SELECT c.{cols} FROM clips c
+                 WHERE c.plain_content LIKE ?1 ESCAPE '\\' AND {filter}
+                 ORDER BY {order} LIMIT ?2"
+            ),
+            None => format!("SELECT {cols} FROM clips c WHERE {filter} ORDER BY {order} LIMIT ?1"),
+        };
+        let mut stmt = self.0.prepare(&sql)?;
+        let rows = match q {
+            Some(q) if q.chars().count() >= 3 => {
+                // Trigram FTS needs 3+ chars; phrase-quote the query.
+                let escaped = format!("\"{}\"", q.replace('"', "\"\""));
+                let rows = stmt.query_map(params![escaped, limit], Self::row_to_clip)?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            }
+            Some(q) => {
+                let pattern = format!("%{}%", q.replace(['%', '_', '\\'], "\\$0"));
+                let rows = stmt.query_map(params![pattern, limit], Self::row_to_clip)?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            }
+            None => {
+                let rows = stmt.query_map(params![limit], Self::row_to_clip)?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            }
         };
         Ok(rows)
     }
@@ -292,11 +356,29 @@ impl Db {
         Ok(())
     }
 
+    pub fn delete_many(&mut self, ids: &[i64]) -> rusqlite::Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let mut stmt = self.0.prepare("DELETE FROM clips WHERE id = ?1")?;
+        for id in ids {
+            stmt.execute(params![id])?;
+        }
+        Ok(())
+    }
+
+    /// Erase clipboard history but keep pinned items and pinboard content
+    /// (matches the original "Erase History" behavior).
+    pub fn erase_history(&mut self) -> rusqlite::Result<usize> {
+        let n = self.0.execute(
+            "DELETE FROM clips WHERE pinned = 0 AND pinboard_id IS NULL",
+            [],
+        )?;
+        Ok(n)
+    }
+
     pub fn toggle_pin(&mut self, id: i64) -> rusqlite::Result<()> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_millis() as i64;
+        let now = now_ms();
         self.0.execute(
             "UPDATE clips
              SET pinned = NOT pinned,
@@ -304,6 +386,90 @@ impl Db {
              WHERE id = ?2",
             params![now, id],
         )?;
+        Ok(())
+    }
+
+    /// Move a clip into a pinboard (None returns it to plain history).
+    pub fn move_clip_to_pinboard(
+        &mut self,
+        id: i64,
+        pinboard_id: Option<i64>,
+    ) -> rusqlite::Result<()> {
+        let now = now_ms();
+        self.0.execute(
+            "UPDATE clips SET pinboard_id = ?1, display_order = ?2 WHERE id = ?3",
+            params![pinboard_id, now, id],
+        )?;
+        Ok(())
+    }
+
+    // ---- pinboards ----
+
+    pub fn list_pinboards(&self) -> rusqlite::Result<Vec<Pinboard>> {
+        let mut stmt = self.0.prepare(
+            "SELECT id, name, color, display_order, created_at
+             FROM pinboards ORDER BY display_order ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Pinboard {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                color: r.get(2)?,
+                display_order: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn create_pinboard(&mut self, name: &str, color: i64) -> rusqlite::Result<Pinboard> {
+        let now = now_ms();
+        let order: i64 = self
+            .0
+            .query_row(
+                "SELECT IFNULL(MAX(display_order), 0) + 1 FROM pinboards",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(1);
+        self.0.execute(
+            "INSERT INTO pinboards (name, color, display_order, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![name, color, order, now],
+        )?;
+        let id = self.0.last_insert_rowid();
+        Ok(Pinboard {
+            id,
+            name: name.to_string(),
+            color,
+            display_order: order,
+            created_at: now,
+        })
+    }
+
+    pub fn rename_pinboard(&mut self, id: i64, name: &str) -> rusqlite::Result<()> {
+        self.0.execute(
+            "UPDATE pinboards SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_pinboard_color(&mut self, id: i64, color: i64) -> rusqlite::Result<()> {
+        self.0
+            .execute("UPDATE pinboards SET color = ?1 WHERE id = ?2", params![color, id])?;
+        Ok(())
+    }
+
+    /// Delete a pinboard together with its content (original behavior:
+    /// "The Pinboard and all its content will be deleted"). The built-in
+    /// Pinned board cannot be deleted.
+    pub fn delete_pinboard(&mut self, id: i64) -> rusqlite::Result<()> {
+        if id == BUILTIN_PINNED_ID {
+            return Err(rusqlite::Error::InvalidParameter);
+        }
+        self.0
+            .execute("DELETE FROM clips WHERE pinboard_id = ?1", params![id])?;
+        self.0.execute("DELETE FROM pinboards WHERE id = ?1", params![id])?;
         Ok(())
     }
 }

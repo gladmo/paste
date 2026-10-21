@@ -17,6 +17,49 @@ const TABLES: Record<Locale, Record<string, string>> = {
   "zh-Hant": zhHant,
 };
 
+/** Replica-specific labels that have no original localization key. */
+const REPLICA: Record<Locale, Record<string, string>> = {
+  en: {
+    "replica.tab.history": "History",
+    "replica.tab.pinned": "Pinned",
+    "replica.pinboard.new": "New Pinboard",
+    "replica.pinboard.name-placeholder": "Name",
+    "replica.pinboard.pick-color": "Color",
+    "replica.pinboard.rename-title": "Rename Pinboard",
+    "replica.time.now": "now",
+    "replica.time.min-ago": "%@min ago",
+    "replica.time.h-ago": "%@h ago",
+    "replica.time.d-ago": "%@d ago",
+    "replica.menu.open-link": "Open Link",
+  },
+  "zh-Hans": {
+    "replica.tab.history": "历史记录",
+    "replica.tab.pinned": "已固定",
+    "replica.pinboard.new": "新建固定板",
+    "replica.pinboard.name-placeholder": "名称",
+    "replica.pinboard.pick-color": "颜色",
+    "replica.pinboard.rename-title": "重命名固定板",
+    "replica.time.now": "刚刚",
+    "replica.time.min-ago": "%@分钟前",
+    "replica.time.h-ago": "%@小时前",
+    "replica.time.d-ago": "%@天前",
+    "replica.menu.open-link": "打开链接",
+  },
+  "zh-Hant": {
+    "replica.tab.history": "歷史記錄",
+    "replica.tab.pinned": "已固定",
+    "replica.pinboard.new": "新增固定板",
+    "replica.pinboard.name-placeholder": "名稱",
+    "replica.pinboard.pick-color": "顏色",
+    "replica.pinboard.rename-title": "重新命名固定板",
+    "replica.time.now": "剛剛",
+    "replica.time.min-ago": "%@分鐘前",
+    "replica.time.h-ago": "%@小時前",
+    "replica.time.d-ago": "%@天前",
+    "replica.menu.open-link": "打開連結",
+  },
+};
+
 export const LOCALE_LABELS: Record<Locale, string> = {
   en: "English",
   "zh-Hans": "简体中文",
@@ -43,7 +86,7 @@ export function detectLocale(): Locale {
 
 /** Translate `key`, substituting each %@ with the next positional arg. */
 export function translate(locale: Locale, key: StringKey, ...args: (string | number)[]): string {
-  let s = TABLES[locale][key] ?? en[key] ?? key;
+  let s = REPLICA[locale][key] ?? TABLES[locale][key] ?? en[key] ?? key;
   for (const arg of args) {
     s = s.replace("%@", String(arg));
   }

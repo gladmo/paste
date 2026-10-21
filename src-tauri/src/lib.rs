@@ -78,12 +78,22 @@ pub fn run() {
             commands::hide_overlay,
             commands::debug_log,
             commands::recent_clips,
+            commands::view_clips,
             commands::pinned_clips,
             commands::app_icon,
             commands::search_clips,
             commands::delete_clip,
+            commands::delete_clips,
+            commands::erase_history,
             commands::toggle_pin,
+            commands::move_clip_to_pinboard,
             commands::paste_clip,
+            commands::copy_clip,
+            commands::list_pinboards,
+            commands::create_pinboard,
+            commands::rename_pinboard,
+            commands::set_pinboard_color,
+            commands::delete_pinboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
