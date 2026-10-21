@@ -220,9 +220,16 @@ pub fn paste_clip(
         .ok_or_else(|| "clip not found".to_string())?;
     drop(db);
 
-    write_clip(&app, &clip, plain.unwrap_or(false))?;
+    let settings = crate::settings::load(&app);
+    let plain = plain.unwrap_or(false) || settings.always_plain_text;
+    write_clip(&app, &clip, plain)?;
 
     crate::overlay::hide(&app);
+
+    if !settings.direct_paste {
+        // "To clipboard" paste mode: only copy, let the user paste manually.
+        return Ok(());
+    }
 
     // Wait for the previously active app to regain key window status, then
     // post ⌘V directly to the app that was frontmost before the overlay.

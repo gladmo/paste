@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the Paste windows",
-  "windows": ["overlay", "settings"],
+  "description": "Capabilities for all Paste windows",
+  "windows": ["overlay", "settings", "preview", "create", "stack", "main"],
   "permissions": [
     "core:default",
     "opener:default",

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { listen } from "@tauri-apps/api/event";
 
 import { useT } from "../i18n";
@@ -155,8 +156,12 @@ export function Overlay() {
       if (listRef.current) listRef.current.scrollLeft = 0;
       requestAnimationFrame(() => requestAnimationFrame(() => usePanel.setState({ anim: 1 })));
     });
+    const offErase = listen("menu:erase-history", () => {
+      setConfirmErase(true);
+    });
     return () => {
       off.then((fn) => fn());
+      offErase.then((fn) => fn());
     };
   }, []);
 
@@ -331,7 +336,7 @@ export function Overlay() {
             {
               key: "open",
               label: t("replica.menu.open-link"),
-              onClick: () => void invoke("plugin:opener|open_url", { url: clip.content }).catch(console.error),
+              onClick: () => openUrl(clip.content).catch(console.error),
             },
           ]
         : []),

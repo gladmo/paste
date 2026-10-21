@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod overlay;
 mod paste;
+mod settings;
 mod tray;
 
 use std::str::FromStr;
@@ -94,6 +95,11 @@ pub fn run() {
             commands::rename_pinboard,
             commands::set_pinboard_color,
             commands::delete_pinboard,
+            settings::get_settings,
+            settings::set_settings,
+            settings::open_settings,
+            settings::running_apps,
+            settings::open_accessibility_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

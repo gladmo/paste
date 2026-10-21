@@ -31,6 +31,11 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.time.h-ago": "%@h ago",
     "replica.time.d-ago": "%@d ago",
     "replica.menu.open-link": "Open Link",
+    "replica.history.1month": "1 Month",
+    "replica.history.1week": "1 Week",
+    "replica.history.1day": "1 Day",
+    "replica.rules.add-app": "Add Application…",
+    "replica.shortcut.modifier-only": "Modifier keys only",
   },
   "zh-Hans": {
     "replica.tab.history": "历史记录",
@@ -44,6 +49,11 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.time.h-ago": "%@小时前",
     "replica.time.d-ago": "%@天前",
     "replica.menu.open-link": "打开链接",
+    "replica.history.1month": "1 个月",
+    "replica.history.1week": "1 周",
+    "replica.history.1day": "1 天",
+    "replica.rules.add-app": "添加应用程序…",
+    "replica.shortcut.modifier-only": "仅修饰键",
   },
   "zh-Hant": {
     "replica.tab.history": "歷史記錄",
@@ -57,6 +67,11 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.time.h-ago": "%@小時前",
     "replica.time.d-ago": "%@天前",
     "replica.menu.open-link": "打開連結",
+    "replica.history.1month": "1 個月",
+    "replica.history.1week": "1 週",
+    "replica.history.1day": "1 天",
+    "replica.rules.add-app": "加入應用程式…",
+    "replica.shortcut.modifier-only": "僅修飾鍵",
   },
 };
 
