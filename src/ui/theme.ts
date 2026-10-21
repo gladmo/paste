@@ -18,7 +18,8 @@ export const THEME = {
     bg: "#3d4246",
     icon: "#9e9fa2",
     text: "#e1e2e2",
-    widthCollapsed: 78,
+    /** Resting pill width measured at ~190pt; expands while typing. */
+    widthCollapsed: 190,
     widthOpen: 300,
     height: 24,
   },
