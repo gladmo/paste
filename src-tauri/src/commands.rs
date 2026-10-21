@@ -4,7 +4,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeRTF, NSPasteboardTypeString};
 use objc2_foundation::{NSData, NSString};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::db::{Clip, Db, Pinboard};
@@ -201,6 +201,146 @@ pub fn copy_clip(app: AppHandle, state: DbState<'_>, id: i64, plain: Option<bool
     drop(db);
     write_clip(&app, &clip, plain.unwrap_or(false))?;
     Ok(())
+}
+
+/// Fetch a single clip (preview / create windows).
+#[tauri::command]
+pub fn get_clip(state: DbState<'_>, id: i64) -> Result<Option<Clip>, String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    db.get_clip(id).map_err(map_db_err)
+}
+
+/// Save edited text/rich content. For rich clips the RTF representation is
+/// regenerated from the edited HTML via textutil so format-preserving paste
+/// keeps working.
+#[tauri::command]
+pub fn update_clip_content(
+    app: AppHandle,
+    state: DbState<'_>,
+    id: i64,
+    content: String,
+    plain_content: String,
+) -> Result<(), String> {
+    let (content_type, old_rtf) = {
+        let db = state.lock().map_err(|e| e.to_string())?;
+        let clip = db
+            .get_clip(id)
+            .map_err(map_db_err)?
+            .ok_or_else(|| "clip not found".to_string())?;
+        (clip.content_type, clip.rtf)
+    };
+    let rtf_b64: Option<String> = if content_type == "richtext" {
+        let html = content.clone();
+        let rtf = crate::clipboard::textutil_convert(html.as_bytes(), "html", "rtf")
+            .ok_or("textutil html->rtf failed")?;
+        Some(BASE64.encode(&rtf))
+    } else {
+        // Plain edit invalidates any stale rich representation.
+        let _ = old_rtf;
+        None
+    };
+    {
+        let db = state.lock().map_err(|e| e.to_string())?;
+        db.update_clip(id, &content, &plain_content, rtf_b64.as_deref())
+            .map_err(map_db_err)?;
+    }
+    let _ = app.emit("clips:updated", ());
+    Ok(())
+}
+
+/// Replace an image clip's stored PNG (base64) — used by rotation.
+#[tauri::command]
+pub fn save_clip_image(
+    app: AppHandle,
+    state: DbState<'_>,
+    id: i64,
+    png_base64: String,
+) -> Result<(), String> {
+    let bytes = BASE64
+        .decode(&png_base64)
+        .map_err(|e| format!("png decode: {e}"))?;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("images");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = format!(
+        "{}.png",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_millis()
+    );
+    let path = dir.join(&name);
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    {
+        let db = state.lock().map_err(|e| e.to_string())?;
+        db.set_clip_content(id, &path.to_string_lossy())
+            .map_err(map_db_err)?;
+    }
+    let _ = app.emit("clips:updated", ());
+    Ok(())
+}
+
+/// Create a text clip from the Create Item window.
+#[tauri::command]
+pub fn create_text_clip(app: AppHandle, state: DbState<'_>, text: String) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Ok(());
+    }
+    {
+        let mut db = state.lock().map_err(|e| e.to_string())?;
+        db.insert_text_clip(&text).map_err(map_db_err)?;
+    }
+    let _ = app.emit("clips:updated", ());
+    Ok(())
+}
+
+/// Open the preview window for a clip (460×380).
+#[tauri::command]
+pub fn open_preview(app: AppHandle, id: i64) {
+    if let Some(w) = app.get_webview_window("preview") {
+        let _ = w.eval(&format!("window.location.hash = '#/preview?id={id}'"));
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        "preview",
+        tauri::WebviewUrl::App(format!("index.html#/preview?id={id}")),
+    )
+    .title("Paste")
+    .inner_size(460.0, 400.0)
+    .min_inner_size(380.0, 320.0)
+    .resizable(true);
+    if let Err(e) = builder.build() {
+        eprintln!("preview window error: {e}");
+    }
+}
+
+/// Open the Create Item window.
+#[tauri::command]
+pub fn open_create(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("create") {
+        let _ = w.eval("window.location.hash = '#/create'");
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        "create",
+        tauri::WebviewUrl::App("index.html#/create".into()),
+    )
+    .title("Paste")
+    .inner_size(400.0, 260.0)
+    .resizable(true)
+    .min_inner_size(360.0, 220.0);
+    if let Err(e) = builder.build() {
+        eprintln!("create window error: {e}");
+    }
 }
 
 /// Put the clip back on the clipboard (text / link / image), hide the panel,

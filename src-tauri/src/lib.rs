@@ -100,6 +100,12 @@ pub fn run() {
             settings::open_settings,
             settings::running_apps,
             settings::open_accessibility_settings,
+            commands::get_clip,
+            commands::update_clip_content,
+            commands::save_clip_image,
+            commands::create_text_clip,
+            commands::open_preview,
+            commands::open_create,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

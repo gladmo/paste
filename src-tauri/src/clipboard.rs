@@ -204,7 +204,7 @@ fn read_rich() -> Option<(Vec<u8>, bool)> {
 
 /// Convert clipboard bytes between rich formats with /usr/bin/textutil
 /// (macOS-native; spawn cost is negligible vs. the 500 ms poll interval).
-fn textutil_convert(input: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
+pub(crate) fn textutil_convert(input: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
     let mut child = std::process::Command::new("/usr/bin/textutil")
         .args(["-convert", to, "-stdin", "-stdout"])
         .stdin(Stdio::piped())

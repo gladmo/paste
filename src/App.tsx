@@ -1,46 +1,29 @@
 import { Overlay } from "./overlay/Overlay";
 import { SettingsApp } from "./settings/SettingsApp";
-import { useT } from "./i18n";
+import { PreviewApp } from "./preview/PreviewApp";
+import { CreateApp } from "./create/CreateApp";
 
 /**
  * Route shell: every Tauri window loads index.html with a hash route.
  *   (none)      → clipboard history overlay (main panel)
  *   #/settings  → settings window
- *   #/preview   → item preview window (P3)
- *   #/create    → create text item window (P3)
+ *   #/preview   → item preview window
+ *   #/create    → create text item window
  *   #/stack     → Paste Stack panel (P4)
  */
-function CreatePlaceholder() {
-  const t = useT();
-  return (
-    <div className="flex h-full items-center justify-center bg-[#2a2b2e] text-neutral-400">
-      {t("general.new-text-item")}…
-    </div>
-  );
-}
-
-function PreviewPlaceholder() {
-  const t = useT();
-  return (
-    <div className="flex h-full items-center justify-center bg-[#2a2b2e] text-neutral-400">
-      {t("general.action.preview")}…
-    </div>
-  );
-}
-
 function StackPlaceholder() {
   return <div className="h-full bg-[#2a2b2e]" />;
 }
 
 export default function App() {
   const hash = window.location.hash;
-  switch (hash) {
+  switch (hash.split("?")[0]) {
     case "#/settings":
       return <SettingsApp />;
     case "#/create":
-      return <CreatePlaceholder />;
+      return <CreateApp />;
     case "#/preview":
-      return <PreviewPlaceholder />;
+      return <PreviewApp />;
     case "#/stack":
       return <StackPlaceholder />;
     default:

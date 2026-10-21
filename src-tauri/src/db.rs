@@ -263,6 +263,36 @@ impl Db {
         Ok(())
     }
 
+    /// Replace a clip's content (edit flow). The FTS triggers keep the
+    /// search index in sync.
+    pub fn update_clip(
+        &self,
+        id: i64,
+        content: &str,
+        plain_content: &str,
+        rtf: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        self.0.execute(
+            "UPDATE clips SET content = ?1, plain_content = ?2, rtf = COALESCE(?3, rtf) WHERE id = ?4",
+            params![content, plain_content, rtf, id],
+        )?;
+        Ok(())
+    }
+
+    /// Replace the stored image of an image clip (rotation flow).
+    pub fn set_clip_content(&self, id: i64, content: &str) -> rusqlite::Result<()> {
+        self.0.execute(
+            "UPDATE clips SET content = ?1 WHERE id = ?2",
+            params![content, id],
+        )?;
+        Ok(())
+    }
+
+    /// Insert a new text clip created by the user (Create Item flow).
+    pub fn insert_text_clip(&mut self, text: &str) -> rusqlite::Result<Option<i64>> {
+        self.insert("text", text, text, None, None, None, None)
+    }
+
     pub fn recent(&self, limit: i64) -> rusqlite::Result<Vec<Clip>> {
         self.history(None, limit)
     }

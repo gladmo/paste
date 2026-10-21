@@ -342,6 +342,11 @@ export function Overlay() {
         : []),
       { key: "sep2", separator: true, label: "" },
       {
+        key: "preview",
+        label: t("general.action.preview"),
+        onClick: () => void invoke("open_preview", { id: clip.id }).catch(console.error),
+      },
+      {
         key: "pin",
         label: clip.pinned ? t("general.action.unpin") : t("general.action.pin"),
         onClick: () => void invoke("toggle_pin", { id: clip.id }).catch(console.error),
@@ -494,13 +499,19 @@ export function Overlay() {
         <Menu x={clipMenu.x} y={clipMenu.y} items={clipMenuItems} onClose={() => setClipMenu(null)} />
       )}
 
-      {/* toolbar context menu (erase history) */}
+      {/* toolbar context menu (create item / erase history) */}
       {toolbarMenu && (
         <Menu
           x={toolbarMenu.x}
           y={toolbarMenu.y}
           items={
             [
+              {
+                key: "create",
+                label: t("general.new-text-item"),
+                onClick: () => void invoke("open_create").catch(console.error),
+              },
+              { key: "sep", separator: true, label: "" },
               {
                 key: "erase",
                 label: `${t("general.action.erase-history")}…`,
