@@ -4,6 +4,7 @@ mod db;
 mod overlay;
 mod paste;
 mod settings;
+mod stack;
 mod tray;
 
 use std::str::FromStr;
@@ -71,6 +72,22 @@ pub fn run() {
                 eprintln!("warning: failed to register hotkey ({e}); use the tray icon instead");
             }
 
+            // Paste Stack toggle: ⌃⌘V by default (configurable in Settings).
+            let stack_shortcut = settings::load(app.handle())
+                .paste_stack_shortcut
+                .parse::<Shortcut>()
+                .unwrap_or(Shortcut::new(
+                    Some(Modifiers::CONTROL | Modifiers::SUPER),
+                    Code::KeyV,
+                ));
+            if let Err(e) = app.global_shortcut().on_shortcut(stack_shortcut, |app, _s, e| {
+                if e.state() == ShortcutState::Pressed {
+                    stack::toggle(app);
+                }
+            }) {
+                eprintln!("warning: failed to register stack hotkey ({e})");
+            }
+
             clipboard::spawn_watcher(app.handle().clone());
 
             Ok(())
@@ -106,6 +123,9 @@ pub fn run() {
             commands::create_text_clip,
             commands::open_preview,
             commands::open_create,
+            commands::stack_toggle,
+            commands::stack_hide,
+            commands::stack_paste,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

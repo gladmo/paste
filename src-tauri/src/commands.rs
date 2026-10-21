@@ -343,6 +343,41 @@ pub fn open_create(app: AppHandle) {
     }
 }
 
+// ---- Paste Stack ----
+
+#[tauri::command]
+pub fn stack_toggle(app: AppHandle) {
+    crate::stack::toggle(&app);
+}
+
+#[tauri::command]
+pub fn stack_hide(app: AppHandle) {
+    crate::stack::hide(&app);
+}
+
+/// Paste an item from the Paste Stack into the frontmost app. The stack is
+/// a non-activating panel, so the previous app still has key focus and the
+/// global ⌘V lands directly in it.
+#[tauri::command]
+pub fn stack_paste(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), String> {
+    let db = state.lock().map_err(|e| e.to_string())?;
+    let clip = db
+        .get_clip(id)
+        .map_err(map_db_err)?
+        .ok_or_else(|| "clip not found".to_string())?;
+    drop(db);
+    let settings = crate::settings::load(&app);
+    write_clip(&app, &clip, settings.always_plain_text)?;
+    crate::stack::hide(&app);
+    if settings.direct_paste {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            crate::paste::send_paste(None);
+        });
+    }
+    Ok(())
+}
+
 /// Put the clip back on the clipboard (text / link / image), hide the panel,
 /// then send ⌘V to the app that was frontmost before the overlay.
 /// `plain` pastes the plain-text representation only.

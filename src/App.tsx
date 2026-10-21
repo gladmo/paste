@@ -2,6 +2,7 @@ import { Overlay } from "./overlay/Overlay";
 import { SettingsApp } from "./settings/SettingsApp";
 import { PreviewApp } from "./preview/PreviewApp";
 import { CreateApp } from "./create/CreateApp";
+import { StackApp } from "./stack/StackApp";
 
 /**
  * Route shell: every Tauri window loads index.html with a hash route.
@@ -9,12 +10,8 @@ import { CreateApp } from "./create/CreateApp";
  *   #/settings  → settings window
  *   #/preview   → item preview window
  *   #/create    → create text item window
- *   #/stack     → Paste Stack panel (P4)
+ *   #/stack     → Paste Stack panel
  */
-function StackPlaceholder() {
-  return <div className="h-full bg-[#2a2b2e]" />;
-}
-
 export default function App() {
   const hash = window.location.hash;
   switch (hash.split("?")[0]) {
@@ -25,7 +22,7 @@ export default function App() {
     case "#/preview":
       return <PreviewApp />;
     case "#/stack":
-      return <StackPlaceholder />;
+      return <StackApp />;
     default:
       return <Overlay />;
   }
