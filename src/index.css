@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  macOS 12 (Safari 15.6) 的 WKWebView 不支持 Tailwind v4 默认输出的
+  oklch()/color-mix()。这里用十六进制覆盖色板,半透明色在 JSX 中改用
+  rgba() 任意值,保证旧版 WebView 上文字和背景正常显示。
+*/
+@theme {
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-zinc-900: #18181b;
+  --color-blue-200: #bfdbfe;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-emerald-500: #10b981;
+  --color-violet-500: #8b5cf6;
+  --color-amber-500: #f59e0b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "Helvetica Neue",
+    "PingFang SC",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Scrollbar never shows; the card row still scrolls with the trackpad. */
+.card-scroll {
+  scrollbar-width: none;
+}
+.card-scroll::-webkit-scrollbar {
+  height: 0;
+  display: none;
+}
