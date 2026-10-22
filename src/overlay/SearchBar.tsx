@@ -1,70 +1,100 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { useT } from "../i18n";
 import { THEME } from "../ui/theme";
 import { usePanel } from "../stores/panel";
 
-/** Search pill (#3d4246) matching the original toolbar: 190pt at rest,
- *  expanding while typing. */
+function MagnifierIcon({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20.5 20.5-4.6-4.6" />
+    </svg>
+  );
+}
+
+/**
+ * Two-state search control matching the original toolbar:
+ * collapsed = bare 16pt magnifier icon; expanded = input pill (opens on
+ * click, on type-to-search, or when a query is present; collapses on
+ * blur/Esc with an empty query).
+ */
 export function SearchBar({ focusRef }: { focusRef: React.RefObject<HTMLInputElement | null> }) {
   const t = useT();
   const query = usePanel((s) => s.query);
   const setQuery = usePanel((s) => s.setQuery);
+  const searchOpen = usePanel((s) => s.searchOpen);
+  const setSearchOpen = usePanel((s) => s.setSearchOpen);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [focused, setFocused] = useState(false);
+
+  const expanded = searchOpen || query.length > 0;
 
   useEffect(() => {
     if (focusRef) focusRef.current = inputRef.current;
+    if (expanded && document.activeElement !== inputRef.current) {
+      inputRef.current?.focus();
+    }
   });
 
-  const width = query || focused ? THEME.search.widthOpen : THEME.search.widthCollapsed;
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        aria-label={t("general.search")}
+        title={t("general.search")}
+        onClick={() => setSearchOpen(true)}
+        className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:bg-[rgba(255,255,255,0.08)]"
+        style={{ color: THEME.search.icon }}
+      >
+        <MagnifierIcon size={THEME.search.iconSize} />
+      </button>
+    );
+  }
 
   return (
     <div
-      className="flex shrink-0 items-center gap-2 rounded-full px-3 transition-[width] duration-200"
+      className="flex shrink-0 items-center gap-2 rounded-[6px] px-3"
       style={{
-        width,
+        width: THEME.search.widthOpen,
         height: THEME.search.height + 4,
         backgroundColor: THEME.search.bg,
       }}
-      onClick={() => inputRef.current?.focus()}
     >
-      <svg
-        className="h-3.5 w-3.5 shrink-0"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={THEME.search.icon}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <circle cx="11" cy="11" r="8" />
-        <path d="m21 21-4.3-4.3" />
-      </svg>
+      <MagnifierIcon size={14} />
       <input
         ref={inputRef}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          if (!query) setSearchOpen(false);
+        }}
         placeholder={t("general.search")}
         spellCheck={false}
-        className="w-full min-w-0 bg-transparent text-[12px] font-medium outline-none"
+        className="w-full min-w-0 bg-transparent text-[13px] font-medium outline-none"
         style={{ color: THEME.search.text }}
       />
       {query && (
         <button
           type="button"
+          aria-label={t("general.action.cancel")}
           onClick={(e) => {
             e.stopPropagation();
             setQuery("");
             inputRef.current?.focus();
           }}
-          className="shrink-0 cursor-pointer transition-colors hover:opacity-100"
-          style={{ color: THEME.search.icon, opacity: 0.8 }}
-          aria-label={t("general.action.cancel")}
+          className="shrink-0 cursor-pointer"
+          style={{ color: THEME.search.icon }}
         >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M18 6 6 18" />
             <path d="m6 6 12 12" />
           </svg>

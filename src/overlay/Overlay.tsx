@@ -78,7 +78,7 @@ function SelectionBar() {
   const clearSelection = usePanel((s) => s.clearSelection);
   const stopSelecting = usePanel((s) => s.stopSelecting);
   return (
-    <div className="flex h-[48px] shrink-0 items-center justify-center gap-3 px-6 text-[12px] font-medium text-neutral-200">
+    <div className="flex h-[60px] shrink-0 items-center justify-center gap-3 px-6 text-[12px] font-medium text-neutral-200">
       <span className="text-neutral-400">{t("general.select-items")}</span>
       {selected.length > 0 && (
         <span className="rounded-full bg-[rgba(10,132,255,0.22)] px-2 py-0.5 text-[11px] font-semibold text-[#7cb8ff]">
@@ -309,6 +309,8 @@ export function Overlay() {
           state.stopSelecting();
         } else if (state.query) {
           state.setQuery("");
+        } else if (state.searchOpen) {
+          state.setSearchOpen(false);
         } else {
           fadeOut(() => void invoke("hide_overlay"));
         }
@@ -464,17 +466,15 @@ export function Overlay() {
         anim ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       }`}
       style={{
-        borderRadius: `${THEME.panel.radius}px ${THEME.panel.radius}px 0 0`,
         backgroundColor: THEME.panel.background,
-        borderTop: THEME.panel.borderTop,
-        backdropFilter: "blur(30px)",
       }}
     >
       {selecting ? (
         <SelectionBar />
       ) : (
         <div
-          className="flex h-[48px] shrink-0 items-center justify-center gap-2 px-10"
+          className="relative flex h-[60px] shrink-0 items-center justify-center px-10"
+          style={{ gap: THEME.toolbar.gap }}
           onContextMenu={(e) => {
             // Panel-level menu: Erase History (tray menu lands in P5).
             e.preventDefault();
@@ -483,6 +483,25 @@ export function Overlay() {
         >
           <SearchBar focusRef={inputRef} />
           <TabBar />
+
+          {/* "⋯" panel menu button (far right, measured 22.5pt margin) */}
+          <button
+            type="button"
+            aria-label={t("replica.menu.more")}
+            title={t("replica.menu.more")}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setToolbarMenu({ x: r.left - 180, y: r.bottom + 6 });
+            }}
+            className="absolute top-1/2 flex h-[32px] w-[28px] -translate-y-1/2 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:bg-[rgba(255,255,255,0.08)]"
+            style={{ right: THEME.toolbar.dotsRight, color: THEME.glyphs.gray }}
+          >
+            <svg width="16" height="4" viewBox="0 0 16 4" fill="currentColor">
+              <circle cx="2" cy="2" r="1.6" />
+              <circle cx="8" cy="2" r="1.6" />
+              <circle cx="14" cy="2" r="1.6" />
+            </svg>
+          </button>
         </div>
       )}
 
@@ -493,8 +512,14 @@ export function Overlay() {
           <>
             <div
               ref={listRef}
-              className="group/strip flex h-full items-start gap-[2px] overflow-x-auto overflow-y-hidden px-[10px] pb-[20px] pt-[16px]"
-              style={{ scrollbarWidth: "none" }}
+              className="group/strip flex h-full items-start overflow-x-auto overflow-y-hidden"
+              style={{
+                scrollbarWidth: "none",
+                paddingLeft: THEME.strip.paddingLeft,
+                paddingTop: THEME.strip.paddingTop,
+                paddingBottom: THEME.strip.paddingBottom,
+                gap: THEME.card.gap,
+              }}
               onScroll={(e) => {
                 const el = e.currentTarget;
                 setCanScroll({
@@ -574,12 +599,22 @@ export function Overlay() {
                 label: t("general.new-text-item"),
                 onClick: () => void invoke("open_create").catch(console.error),
               },
+              {
+                key: "manage",
+                label: t("general.action.manage-pinboards"),
+                onClick: () => usePanel.getState().setView("pinned"),
+              },
               { key: "sep", separator: true, label: "" },
               {
                 key: "erase",
                 label: `${t("general.action.erase-history")}…`,
                 danger: true,
                 onClick: () => setConfirmErase(true),
+              },
+              {
+                key: "settings",
+                label: `${t("general.settings")}…`,
+                onClick: () => void invoke("open_settings").catch(console.error),
               },
             ] satisfies MenuItem[]
           }

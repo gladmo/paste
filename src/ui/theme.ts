@@ -1,45 +1,71 @@
 /**
- * UI constants measured from the original Paste.app screenshots
- * (design/主界面.png etc., 2x Retina — values below are logical points).
+ * UI constants measured pixel-by-pixel from design/主界面.png (2x Retina).
+ * All values are logical points.
  */
 export const THEME = {
   panel: {
-    /** Full-width bottom panel height (screenshot: 332pt). */
+    /** Full-width bottom panel height. */
     height: 332,
-    /** Toolbar top padding + pill height (screenshot: cards start at 64pt). */
-    toolbarHeight: 64,
-    /** Bottom padding below the card strip (screenshot: ~20pt). */
-    bottomPadding: 20,
-    background: "rgba(38, 39, 42, 0.92)",
-    borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-    radius: 10,
+    /** Flat near-opaque dark background (screenshot: #252728 → #2a2b2e). */
+    background: "#272a2c",
+    /** Square corners, no top border (measured). */
+  },
+  toolbar: {
+    /** Controls (search icon / pill / dots) are vertically centered at ~29.75pt. */
+    height: 60,
+    /** Distance between toolbar items. */
+    gap: 18,
+    /** Right margin of the "⋯" panel menu button. */
+    dotsRight: 22.5,
   },
   search: {
-    bg: "#3d4246",
-    icon: "#9e9fa2",
+    /** Collapsed state is a bare 16pt magnifier icon. */
+    iconSize: 16,
+    icon: "#9da1a2",
+    /** Expanded input pill. */
+    bg: "#3d4245",
     text: "#e1e2e2",
-    /** Resting pill width measured at ~190pt; expands while typing. */
-    widthCollapsed: 190,
     widthOpen: 300,
     height: 24,
   },
   tab: {
-    textActive: "#dedfdf",
-    textInactive: "#a1a2a4",
-    iconSize: 14,
+    /** Active tab background chip (#3d4245, 27.5pt tall, radius 5). */
+    pillBg: "#3d4245",
+    pillHeight: 27.5,
+    pillRadius: 5,
+    pillPadLeft: 15,
+    pillPadRight: 12.5,
+    /** Icon-to-label gap inside a tab. */
+    innerGap: 8,
+    textActive: "#e1e2e2",
+    textInactive: "#9a9c9e",
+    fontSize: 13,
+    /** History tab clock icon; pinboard tabs are 13pt solid color dots. */
+    iconSize: 13,
+    dotSize: 13,
   },
   card: {
-    /** Screenshot pitch is 244pt with flush cards; 242 + 2 gap matches it. */
-    width: 242,
-    height: 248,
-    gap: 2,
+    /** Outer 248pt box includes a 4pt border slot on every card. */
+    outer: 248,
+    border: 4,
+    content: 240,
+    /** Gap between card boxes (pitch 264pt). */
+    gap: 16,
+    radius: 11,
     bg: "#141414",
-    radius: 10,
     selectedBorder: "#0077fc",
-    selectedGlow: "rgba(0, 119, 252, 0.35)",
-    hairline: "rgba(255, 255, 255, 0.05)",
-    contentText: "#dcdcdc",
-    footerText: "#8b8b8b",
+    /** Footer: centered single gray line. */
+    footerText: "#959595",
+    footerFontSize: 11,
+    footerHeight: 24,
+  },
+  strip: {
+    paddingLeft: 20,
+    paddingTop: 4,
+    paddingBottom: 20,
+  },
+  glyphs: {
+    gray: "#9da1a2",
   },
 } as const;
 

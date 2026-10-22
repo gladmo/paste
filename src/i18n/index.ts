@@ -38,6 +38,7 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.shortcut.modifier-only": "Modifier keys only",
     "replica.settings.language": "Language",
     "replica.settings.language-system": "System Default",
+    "replica.menu.more": "More",
   },
   "zh-Hans": {
     "replica.tab.history": "历史记录",
@@ -58,6 +59,7 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.shortcut.modifier-only": "仅修饰键",
     "replica.settings.language": "语言",
     "replica.settings.language-system": "跟随系统",
+    "replica.menu.more": "更多",
   },
   "zh-Hant": {
     "replica.tab.history": "歷史記錄",
@@ -78,6 +80,7 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.shortcut.modifier-only": "僅修飾鍵",
     "replica.settings.language": "語言",
     "replica.settings.language-system": "跟隨系統",
+    "replica.menu.more": "更多",
   },
 };
 

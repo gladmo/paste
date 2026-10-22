@@ -8,7 +8,7 @@ import type { Pinboard } from "../types";
 import { usePanel } from "../stores/panel";
 import { ConfirmDialog } from "./Menu";
 
-function ClockIcon({ size = 14 }: { size?: number }) {
+function ClockIcon({ size = 13 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10" />
@@ -17,36 +17,25 @@ function ClockIcon({ size = 14 }: { size?: number }) {
   );
 }
 
-function PinIcon({ size = 13 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 17v5" />
-      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
-    </svg>
-  );
-}
-
-/** One toolbar tab: colored icon + label (no pill background, like the
- *  original; active tab text is brighter). */
+/** One toolbar tab. Active = #3d4245 chip with bright label; inactive =
+ *  13pt icon (colored dot / clock) + dim label, no background. */
 function Tab({
   label,
   active,
+  icon,
   onClick,
   onContext,
   onDouble,
-  icon,
-  color,
   editingLabel,
   onRename,
   onCancelRename,
 }: {
   label: string;
   active: boolean;
+  icon: React.ReactNode;
   onClick: () => void;
   onContext?: (e: React.MouseEvent) => void;
   onDouble?: () => void;
-  icon?: React.ReactNode;
-  color?: string;
   editingLabel?: string | null;
   onRename?: (name: string) => void;
   onCancelRename?: () => void;
@@ -56,25 +45,47 @@ function Tab({
     if (editingLabel != null) inputRef.current?.select();
   }, [editingLabel]);
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onContextMenu={onContext}
-      onDoubleClick={onDouble}
-      className={`flex shrink-0 cursor-pointer items-center gap-1.5 px-2 py-0.5 text-[12.5px] font-medium transition-colors ${
-        active ? "" : "hover:opacity-90"
-      }`}
-      style={{ color: active ? THEME.tab.textActive : THEME.tab.textInactive }}
-    >
-      {icon ?? (
-        <span
-          className="flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-[3px]"
-          style={{ color }}
-        >
-          <PinIcon />
-        </span>
-      )}
+  const chip = (children: React.ReactNode) =>
+    active ? (
+      <div
+        className="flex shrink-0 cursor-pointer items-center"
+        style={{
+          height: THEME.tab.pillHeight,
+          backgroundColor: THEME.tab.pillBg,
+          borderRadius: THEME.tab.pillRadius,
+          paddingLeft: THEME.tab.pillPadLeft,
+          paddingRight: THEME.tab.pillPadRight,
+          gap: THEME.tab.innerGap,
+        }}
+        onClick={onClick}
+        onContextMenu={onContext}
+        onDoubleClick={onDouble}
+      >
+        {children}
+      </div>
+    ) : (
+      <button
+        type="button"
+        onClick={onClick}
+        onContextMenu={onContext}
+        onDoubleClick={onDouble}
+        className="flex shrink-0 cursor-pointer items-center rounded-[5px] px-[8px] transition-colors hover:bg-[rgba(255,255,255,0.05)]"
+        style={{
+          height: THEME.tab.pillHeight,
+          gap: THEME.tab.innerGap,
+          color: THEME.tab.textInactive,
+          fontSize: THEME.tab.fontSize,
+        }}
+      >
+        {children}
+      </button>
+    );
+
+  return chip(
+    <>
+      <span className="flex shrink-0 items-center justify-center" style={{ color: active ? THEME.tab.textActive : THEME.tab.textInactive }}>
+        {icon}
+      </span>
       {editingLabel != null ? (
         <input
           ref={inputRef}
@@ -91,9 +102,14 @@ function Tab({
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span className="max-w-[140px] truncate">{label}</span>
+        <span
+          className="max-w-[160px] truncate font-medium"
+          style={{ color: active ? THEME.tab.textActive : THEME.tab.textInactive }}
+        >
+          {label}
+        </span>
       )}
-    </button>
+    </>,
   );
 }
 
@@ -124,16 +140,12 @@ export function TabBar() {
 
   return (
     <>
-      <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+      <div className="flex min-w-0 items-center" style={{ gap: 10 }}>
         <Tab
           label={t("replica.tab.history")}
           active={view === "history"}
           onClick={() => setView("history")}
-          icon={
-            <span className="flex h-[13px] w-[13px] shrink-0 items-center justify-center">
-              <ClockIcon />
-            </span>
-          }
+          icon={<ClockIcon size={THEME.tab.iconSize} />}
         />
         {boards.map((board) => {
           const isBuiltin = board.id === BUILTIN_PINNED_ID;
@@ -143,7 +155,6 @@ export function TabBar() {
               key={board.id}
               label={isBuiltin ? t("replica.tab.pinned") : board.name}
               active={active}
-              color={packedToCss(board.color)}
               onClick={() => setView(isBuiltin ? "pinned" : "board", board.id)}
               onContext={(e) => {
                 e.preventDefault();
@@ -160,78 +171,89 @@ export function TabBar() {
                 }
               }}
               onCancelRename={() => setRenaming(null)}
+              icon={
+                <span
+                  className="rounded-full"
+                  style={{
+                    width: THEME.tab.dotSize,
+                    height: THEME.tab.dotSize,
+                    backgroundColor: packedToCss(board.color),
+                  }}
+                />
+              }
             />
           );
         })}
-      </div>
 
-      {/* "+" create pinboard button (far right of the tab cluster) */}
-      <div className="relative shrink-0">
-        <button
-          type="button"
-          title={t("general.action.create-pinboard")}
-          aria-label={t("general.action.create-pinboard")}
-          onClick={() => setCreating((v) => !v)}
-          className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full text-neutral-300 transition-colors hover:bg-[rgba(255,255,255,0.1)] hover:text-white"
-        >
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <path d="M12 5v14" />
-            <path d="M5 12h14" />
-          </svg>
-        </button>
-        {creating && (
-          <div
-            className="absolute right-0 top-8 z-50 w-[228px] rounded-[10px] border border-[rgba(255,255,255,0.12)] p-3 shadow-2xl"
-            style={{ backgroundColor: "rgba(42,43,46,0.98)", backdropFilter: "blur(20px)" }}
-            onMouseDown={(e) => e.stopPropagation()}
+        {/* "+" create pinboard button (bare 13pt glyph next to the tabs) */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            title={t("general.action.create-pinboard")}
+            aria-label={t("general.action.create-pinboard")}
+            onClick={() => setCreating((v) => !v)}
+            className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[5px] transition-colors hover:bg-[rgba(255,255,255,0.08)]"
+            style={{ color: THEME.glyphs.gray }}
           >
-            <p className="mb-2 text-[12px] font-semibold text-neutral-100">{t("replica.pinboard.new")}</p>
-            <input
-              autoFocus
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void create();
-                if (e.key === "Escape") setCreating(false);
-              }}
-              placeholder={t("replica.pinboard.name-placeholder")}
-              className="mb-2.5 w-full rounded-[6px] bg-[rgba(255,255,255,0.08)] px-2 py-1 text-[12px] text-neutral-100 outline-none ring-1 ring-[rgba(255,255,255,0.12)] focus:ring-[#0077fc]"
-            />
-            <p className="mb-1 text-[10px] font-medium text-neutral-400">{t("replica.pinboard.pick-color")}</p>
-            <div className="mb-3 flex gap-1.5">
-              {PINBOARD_COLORS.map((c) => (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+          {creating && (
+            <div
+              className="absolute right-0 top-8 z-50 w-[228px] rounded-[10px] border border-[rgba(255,255,255,0.12)] p-3 shadow-2xl"
+              style={{ backgroundColor: "rgba(42,43,46,0.98)", backdropFilter: "blur(20px)" }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <p className="mb-2 text-[12px] font-semibold text-neutral-100">{t("replica.pinboard.new")}</p>
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void create();
+                  if (e.key === "Escape") setCreating(false);
+                }}
+                placeholder={t("replica.pinboard.name-placeholder")}
+                className="mb-2.5 w-full rounded-[6px] bg-[rgba(255,255,255,0.08)] px-2 py-1 text-[12px] text-neutral-100 outline-none ring-1 ring-[rgba(255,255,255,0.12)] focus:ring-[#0077fc]"
+              />
+              <p className="mb-1 text-[10px] font-medium text-neutral-400">{t("replica.pinboard.pick-color")}</p>
+              <div className="mb-3 flex gap-1.5">
+                {PINBOARD_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setNewColor(c)}
+                    className="h-[16px] w-[16px] cursor-pointer rounded-full transition-transform hover:scale-110"
+                    style={{
+                      backgroundColor: packedToCss(c),
+                      boxShadow: newColor === c ? "0 0 0 2px rgba(255,255,255,0.8)" : "none",
+                    }}
+                    aria-label={`color-${c}`}
+                  />
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
                 <button
-                  key={c}
                   type="button"
-                  onClick={() => setNewColor(c)}
-                  className="h-[16px] w-[16px] cursor-pointer rounded-full transition-transform hover:scale-110"
-                  style={{
-                    backgroundColor: packedToCss(c),
-                    boxShadow: newColor === c ? "0 0 0 2px rgba(255,255,255,0.8)" : "none",
-                  }}
-                  aria-label={`color-${c}`}
-                />
-              ))}
+                  onClick={() => setCreating(false)}
+                  className="cursor-pointer rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.08)] px-3 py-1 text-[12px] text-neutral-100 hover:bg-[rgba(255,255,255,0.14)]"
+                >
+                  {t("general.action.cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void create()}
+                  disabled={!newName.trim()}
+                  className="cursor-pointer rounded-[6px] bg-[#0a84ff] px-3 py-1 text-[12px] font-semibold text-white hover:bg-[#2a95ff] disabled:opacity-40"
+                >
+                  {t("general.action.create")}
+                </button>
+              </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setCreating(false)}
-                className="cursor-pointer rounded-[6px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.08)] px-3 py-1 text-[12px] text-neutral-100 hover:bg-[rgba(255,255,255,0.14)]"
-              >
-                {t("general.action.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void create()}
-                disabled={!newName.trim()}
-                className="cursor-pointer rounded-[6px] bg-[#0a84ff] px-3 py-1 text-[12px] font-semibold text-white hover:bg-[#2a95ff] disabled:opacity-40"
-              >
-                {t("general.action.create")}
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* pinboard context menu (rename / color / delete) */}

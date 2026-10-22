@@ -5,7 +5,7 @@ import { THEME } from "../ui/theme";
 import type { Clip } from "../types";
 import { CardPreview, formatTime } from "./preview";
 
-/** Small monochrome type glyph for the card footer (icon.text/link/…). */
+/** Small monochrome type glyph (Paste Stack rows; kept for reuse). */
 export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
   const common = {
     width: size,
@@ -69,8 +69,11 @@ export interface CardHandlers {
   onSelectionClick: (e: React.MouseEvent) => void;
 }
 
-/** One history/pinboard card: content fills the card, footer holds the
- *  centered [type icon · time · source] caption (measured layout). */
+/**
+ * One history card (measured geometry): 248pt outer box with a 4pt border
+ * slot (blue when active, transparent otherwise), 240pt content, 11pt
+ * radius, no glow; footer is a single centered gray line ("app · time").
+ */
 export function ClipCard({
   clip,
   index,
@@ -94,7 +97,7 @@ export function ClipCard({
   const c = THEME.card;
 
   const footerCaption = clip.sourceName
-    ? `${formatTime(clip.copiedAt, t)} · ${clip.sourceName}`
+    ? `${clip.sourceName} · ${formatTime(clip.copiedAt, t)}`
     : formatTime(clip.copiedAt, t);
 
   return (
@@ -112,79 +115,77 @@ export function ClipCard({
       }}
       onDoubleClick={handlers.onOpen}
       onContextMenu={handlers.onContext}
-      className="group relative flex shrink-0 cursor-pointer flex-col p-2 transition-colors"
+      className="group relative flex shrink-0 cursor-pointer flex-col box-border"
       style={{
-        width: c.width,
-        height: c.height,
+        width: c.outer,
+        height: c.outer,
         borderRadius: c.radius,
+        border: `${c.border}px solid ${isActive ? c.selectedBorder : "transparent"}`,
         backgroundColor: c.bg,
-        boxShadow: isActive
-          ? `0 0 0 2px ${c.selectedBorder}, 0 0 12px ${c.selectedGlow}`
-          : `inset 0 0 0 1px ${c.hairline}`,
       }}
     >
-      {/* selection checkbox */}
-      {(selecting || selected) && (
-        <div
-          className="absolute left-2 top-2 z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full"
-          style={{
-            backgroundColor: selected ? "#0077fc" : "rgba(0,0,0,0.45)",
-            boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.6)",
-          }}
-        >
-          {selected && (
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          )}
-        </div>
-      )}
+      {/* content (240pt inside the border) */}
+      <div className="relative min-h-0 flex-1 overflow-hidden" style={{ borderRadius: c.radius - c.border }}>
+        <CardPreview clip={clip} />
 
-      {/* hover pin toggle */}
-      {!selecting && (
-        <button
-          type="button"
-          aria-label={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
-          title={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
-          onClick={(e) => {
-            e.stopPropagation();
-            handlers.onTogglePin();
-          }}
-          className={`absolute right-2 top-2 z-10 cursor-pointer rounded-md p-1 transition-colors ${
-            clip.pinned
-              ? "text-blue-300"
-              : "text-neutral-300 opacity-0 group-hover:opacity-70 hover:!opacity-100"
-          }`}
-          style={clip.pinned ? { backgroundColor: "rgba(0,0,0,0.35)" } : { backgroundColor: "rgba(0,0,0,0.35)" }}
-        >
-          <svg
-            className="h-3.5 w-3.5"
-            viewBox="0 0 24 24"
-            fill={clip.pinned ? "currentColor" : "none"}
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        {/* selection checkbox overlay */}
+        {(selecting || selected) && (
+          <div
+            className="absolute left-[8px] top-[8px] z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full"
+            style={{
+              backgroundColor: selected ? "#0077fc" : "rgba(0,0,0,0.45)",
+              boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.6)",
+            }}
           >
-            <path d="M12 17v5" />
-            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
-          </svg>
-        </button>
-      )}
+            {selected && (
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </div>
+        )}
 
-      <CardPreview clip={clip} />
+        {/* hover pin toggle */}
+        {!selecting && (
+          <button
+            type="button"
+            aria-label={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
+            title={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
+            onClick={(e) => {
+              e.stopPropagation();
+              handlers.onTogglePin();
+            }}
+            className={`absolute right-[8px] top-[8px] z-10 cursor-pointer rounded-md p-1 transition-colors ${
+              clip.pinned
+                ? "text-blue-300"
+                : "text-neutral-300 opacity-0 group-hover:opacity-70 hover:!opacity-100"
+            }`}
+            style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill={clip.pinned ? "currentColor" : "none"}
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 17v5" />
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+            </svg>
+          </button>
+        )}
+      </div>
 
-      {/* footer: centered [type icon] caption */}
+      {/* footer: centered single gray line */}
       <div
-        className="mt-1.5 flex h-[22px] shrink-0 items-center justify-center gap-1.5 px-1 text-[11px] font-medium"
-        style={{ color: THEME.card.footerText }}
+        className="flex shrink-0 items-center justify-center gap-1.5"
+        style={{ height: c.footerHeight, color: c.footerText, fontSize: c.footerFontSize }}
       >
-        <span className="flex shrink-0 items-center opacity-80">
-          <TypeIcon type={clip.contentType} />
-        </span>
-        <span className="truncate tabular-nums">{footerCaption}</span>
+        <span className="truncate font-medium tabular-nums">{footerCaption}</span>
         {showIndex && metaDown && index < 9 && (
-          <span className="ml-0.5 flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.22)] text-[9px] font-bold text-white ring-1 ring-[rgba(255,255,255,0.35)]">
+          <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.22)] text-[9px] font-bold text-white ring-1 ring-[rgba(255,255,255,0.35)]">
             {index + 1}
           </span>
         )}
