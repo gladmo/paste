@@ -6,7 +6,8 @@ use core_graphics::event::CGEvent;
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use objc2_app_kit::NSWorkspace;
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Size, WebviewUrl,
+    utils::config::WindowEffectsConfig, window::Effect, window::EffectState, AppHandle, Emitter,
+    LogicalPosition, LogicalSize, Manager, Position, Size, WebviewUrl,
 };
 use tauri_nspanel::{tauri_panel, ManagerExt, PanelBuilder, PanelLevel, StyleMask};
 
@@ -107,6 +108,24 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     panel.set_event_handler(Some(delegate.as_ref()));
 
     panel.hide();
+
+    // The original panel is a translucent HUD material: its colour visibly
+    // follows the desktop behind it (two reference screenshots over different
+    // wallpapers show the same UI at #27..#2a vs #3d..#61 grey). Apply real
+    // macOS vibrancy behind the transparent webview instead of painting a
+    // flat fill.
+    if let Some(window) = app.get_webview_window(PANEL_LABEL) {
+        if let Err(err) = window.set_effects(Some(WindowEffectsConfig {
+            effects: vec![Effect::HudWindow],
+            state: Some(EffectState::FollowsWindowActiveState),
+            radius: None,
+            color: None,
+        })) {
+            crate::paste::log_info(&format!("[overlay] set_effects failed: {err}"));
+        } else {
+            crate::paste::log_info("[overlay] vibrancy applied (HudWindow)");
+        }
+    }
 
     // Close the panel when the user actually switches apps: watch the
     // frontmost app while the panel is visible. (A non-activating panel

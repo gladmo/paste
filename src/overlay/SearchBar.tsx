@@ -37,12 +37,17 @@ export function SearchBar({ focusRef }: { focusRef: React.RefObject<HTMLInputEle
   const inputRef = useRef<HTMLInputElement>(null);
 
   const expanded = searchOpen || query.length > 0;
+  // Focus only when the field opens (not on every render, which would steal
+  // focus back from the panel whenever it re-renders).
+  const wasExpanded = useRef(false);
 
   useEffect(() => {
     if (focusRef) focusRef.current = inputRef.current;
-    if (expanded && document.activeElement !== inputRef.current) {
+    if (expanded && !wasExpanded.current) {
       inputRef.current?.focus();
+      inputRef.current?.select();
     }
+    wasExpanded.current = expanded;
   });
 
   if (!expanded) {

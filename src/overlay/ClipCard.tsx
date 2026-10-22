@@ -3,9 +3,9 @@ import React from "react";
 import { useT } from "../i18n";
 import { THEME } from "../ui/theme";
 import type { Clip } from "../types";
-import { CardPreview, formatTime } from "./preview";
+import { CardPreview, clipMeta } from "./preview";
 
-/** Small monochrome type glyph (Paste Stack rows; kept for reuse). */
+/** Small monochrome content-type glyph (cards, Paste Stack rows). */
 export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
   const common = {
     width: size,
@@ -13,7 +13,7 @@ export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: 2,
+    strokeWidth: 2.2,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
@@ -34,15 +34,6 @@ export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
       </svg>
     );
   }
-  if (type === "richtext") {
-    return (
-      <svg {...common}>
-        <path d="M4 7V5h16v2" />
-        <path d="M12 5v14" />
-        <path d="M9 19h6" />
-      </svg>
-    );
-  }
   if (type === "file") {
     return (
       <svg {...common}>
@@ -51,12 +42,18 @@ export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
       </svg>
     );
   }
-  // text
+  if (type === "color") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="3" width="18" height="18" rx="3" />
+      </svg>
+    );
+  }
+  // text / richtext — matches the original's tiny "T" caption glyph
   return (
-    <svg {...common}>
-      <path d="M17 6.1H3" />
-      <path d="M21 12.1H3" />
-      <path d="M15.1 18H3" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+      <path d="M5 5h14" />
+      <path d="M12 5v15" />
     </svg>
   );
 }
@@ -70,9 +67,11 @@ export interface CardHandlers {
 }
 
 /**
- * One history card (measured geometry): 248pt outer box with a 4pt border
- * slot (blue when active, transparent otherwise), 240pt content, 11pt
- * radius, no glow; footer is a single centered gray line ("app · time").
+ * One history card, measured from the reference screenshot:
+ * 248pt outer box with a 4pt border slot (blue when active, transparent
+ * otherwise) around 240pt of content, 11pt radius, no glow. The content
+ * fills the card; the content-meta caption ("59 characters") is overlaid
+ * centered at the bottom with a tiny type glyph in the bottom-right corner.
  */
 export function ClipCard({
   clip,
@@ -95,10 +94,7 @@ export function ClipCard({
 }) {
   const t = useT();
   const c = THEME.card;
-
-  const footerCaption = clip.sourceName
-    ? `${clip.sourceName} · ${formatTime(clip.copiedAt, t)}`
-    : formatTime(clip.copiedAt, t);
+  const meta = clipMeta(clip, t);
 
   return (
     <div
@@ -115,7 +111,7 @@ export function ClipCard({
       }}
       onDoubleClick={handlers.onOpen}
       onContextMenu={handlers.onContext}
-      className="group relative flex shrink-0 cursor-pointer flex-col box-border"
+      className="group relative shrink-0 cursor-pointer box-border"
       style={{
         width: c.outer,
         height: c.outer,
@@ -124,8 +120,11 @@ export function ClipCard({
         backgroundColor: c.bg,
       }}
     >
-      {/* content (240pt inside the border) */}
-      <div className="relative min-h-0 flex-1 overflow-hidden" style={{ borderRadius: c.radius - c.border }}>
+      {/* content (240pt inside the border, full-bleed) */}
+      <div
+        className="absolute inset-[4px] flex flex-col overflow-hidden"
+        style={{ borderRadius: c.radius - c.border }}
+      >
         <CardPreview clip={clip} />
 
         {/* selection checkbox overlay */}
@@ -178,17 +177,39 @@ export function ClipCard({
         )}
       </div>
 
-      {/* footer: centered single gray line */}
+      {/* content-meta caption, centered on the card bottom */}
+      {meta && (
+        <div
+          className="pointer-events-none absolute inset-x-0 flex justify-center px-[34px]"
+          style={{ bottom: c.footerBottom }}
+        >
+          <span
+            className="truncate font-medium"
+            style={{ color: c.footerText, fontSize: c.footerFontSize, lineHeight: 1 }}
+          >
+            {meta}
+          </span>
+        </div>
+      )}
+
+      {/* bottom-right type glyph — replaced by the quick-paste number while
+          the ⌘ modifier is held */}
       <div
-        className="flex shrink-0 items-center justify-center gap-1.5"
-        style={{ height: c.footerHeight, color: c.footerText, fontSize: c.footerFontSize }}
+        className="pointer-events-none absolute flex items-center justify-center"
+        style={{
+          right: c.iconRight,
+          bottom: c.iconBottom,
+          color: c.iconColor,
+          height: 14,
+        }}
       >
-        <span className="truncate font-medium tabular-nums">{footerCaption}</span>
-        {showIndex && metaDown && index < 9 && (
-          <span className="flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full bg-[rgba(255,255,255,0.22)] text-[9px] font-bold text-white ring-1 ring-[rgba(255,255,255,0.35)]">
+        {showIndex && metaDown && index < 9 ? (
+          <span className="flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[rgba(255,255,255,0.22)] text-[9px] font-bold text-white ring-1 ring-[rgba(255,255,255,0.35)]">
             {index + 1}
           </span>
-        )}
+        ) : meta ? (
+          <TypeIcon type={clip.contentType} size={c.iconSize} />
+        ) : null}
       </div>
     </div>
   );

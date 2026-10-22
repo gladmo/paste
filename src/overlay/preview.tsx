@@ -66,6 +66,31 @@ export function formatTime(ts: number, t: ReturnType<typeof useT>): string {
   });
 }
 
+/**
+ * Content-meta caption rendered at the bottom of every card, matching the
+ * original app's Localizable.stringsdict keys:
+ *   %d characters / %d files / %d items / %d lines / %d words
+ * (e.g. a text clip shows "59 characters", a single file just "File").
+ */
+export function clipMeta(clip: Clip, t: ReturnType<typeof useT>): string {
+  if (clip.contentType === "file") {
+    const paths = (clip.plainContent ?? clip.content).split("\n").filter(Boolean);
+    return paths.length > 1
+      ? t("replica.meta.files", paths.length)
+      : t("replica.meta.file");
+  }
+  if (
+    clip.contentType === "text" ||
+    clip.contentType === "richtext" ||
+    clip.contentType === "link"
+  ) {
+    const n = (clip.plainContent ?? clip.content).length;
+    return n === 1 ? t("replica.meta.character", n) : t("replica.meta.characters", n);
+  }
+  // Images and colours have no localized plural form in the original app.
+  return "";
+}
+
 function formatSize(bytes: number): string {
   return bytes >= 1048576
     ? `${(bytes / 1048576).toFixed(1)} MB`
@@ -136,11 +161,11 @@ export function AppIcon({ bundleId, name, size = 38 }: { bundleId?: string | nul
 export function CardPreview({ clip }: { clip: Clip }) {
   if (clip.contentType === "image") {
     return (
-      <div className="min-h-0 flex-1 overflow-hidden rounded-[8px]">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-[7px]">
         <img
           src={convertFileSrc(clip.content)}
           alt="clip"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
           draggable={false}
         />
       </div>
@@ -153,7 +178,7 @@ export function CardPreview({ clip }: { clip: Clip }) {
     const bg = extractBgColor(sanitized);
     return (
       <div
-        className="min-h-0 flex-1 overflow-hidden rounded-[8px] p-2"
+        className="min-h-0 flex-1 overflow-hidden rounded-[7px] p-2 pb-[26px]"
         style={{ backgroundColor: bg ?? "rgba(255,255,255,0.04)" }}
       >
         <div
@@ -166,7 +191,7 @@ export function CardPreview({ clip }: { clip: Clip }) {
   }
   if (clip.contentType === "link") {
     return (
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden p-2">
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden p-2 pb-[26px]">
         {clip.title && (
           <p className="line-clamp-2 text-[13px] font-semibold" style={{ color: "#dcdcdc" }}>
             {clip.title}
@@ -182,7 +207,7 @@ export function CardPreview({ clip }: { clip: Clip }) {
   if (clip.contentType === "file") {
     const paths = (clip.plainContent ?? clip.content).split("\n").filter(Boolean);
     return (
-      <div className="min-h-0 flex-1 space-y-1 overflow-hidden p-2">
+      <div className="min-h-0 flex-1 space-y-1 overflow-hidden p-2 pb-[26px]">
         {paths.slice(0, 4).map((p) => (
           <p key={p} className="truncate text-[12px]" style={{ color: "#dcdcdc" }}>
             {p.split("/").pop()}
@@ -203,7 +228,7 @@ export function CardPreview({ clip }: { clip: Clip }) {
       /* keep default */
     }
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-3">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-3 pb-[26px]">
         <div
           className="h-full w-full rounded-[8px] ring-1 ring-inset ring-[rgba(255,255,255,0.2)]"
           style={{ backgroundColor: hex }}
@@ -212,9 +237,9 @@ export function CardPreview({ clip }: { clip: Clip }) {
     );
   }
   return (
-    <div className="min-h-0 flex-1 overflow-hidden rounded-[8px] bg-[rgba(255,255,255,0.04)] p-2">
+    <div className="min-h-0 flex-1 overflow-hidden p-2.5 pb-[26px]">
       <p
-        className="line-clamp-6 whitespace-pre-wrap break-all text-[13px] leading-snug"
+        className="line-clamp-7 whitespace-pre-wrap break-all text-[13px] leading-snug"
         style={{ color: "#dcdcdc" }}
       >
         {clip.content}

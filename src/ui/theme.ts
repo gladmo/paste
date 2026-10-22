@@ -6,17 +6,21 @@ export const THEME = {
   panel: {
     /** Full-width bottom panel height. */
     height: 332,
-    /** Flat near-opaque dark background (screenshot: #252728 → #2a2b2e). */
-    background: "#272a2c",
-    /** Square corners, no top border (measured). */
+    /**
+     * The real blur comes from macOS vibrancy (HudWindow, applied in Rust).
+     * This translucent tint only adds contrast over the material — and still
+     * yields a usable dark panel should the window effect be unavailable.
+     * Square corners, no top border (measured).
+     */
+    background: "rgba(18, 19, 21, 0.30)",
   },
   toolbar: {
     /** Controls (search icon / pill / dots) are vertically centered at ~29.75pt. */
     height: 60,
     /** Distance between toolbar items. */
     gap: 18,
-    /** Right margin of the "⋯" panel menu button. */
-    dotsRight: 22.5,
+    /** Right margin of the "⋯" glyph (button padding is compensated). */
+    dotsRight: 16.5,
   },
   search: {
     /** Collapsed state is a bare 16pt magnifier icon. */
@@ -54,10 +58,16 @@ export const THEME = {
     radius: 11,
     bg: "#141414",
     selectedBorder: "#0077fc",
-    /** Footer: centered single gray line. */
+    /** Content-meta caption: one centered gray line at the card bottom. */
     footerText: "#959595",
     footerFontSize: 11,
-    footerHeight: 24,
+    /** Caption baseline block offset from the card's outer bottom edge. */
+    footerBottom: 14,
+    /** Content-type glyph in the bottom-right corner. */
+    iconColor: "#8c8c8c",
+    iconSize: 9.5,
+    iconRight: 17,
+    iconBottom: 14,
   },
   strip: {
     paddingLeft: 20,
