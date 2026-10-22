@@ -38,6 +38,8 @@ pub struct Settings {
     pub link_previews: bool,
     /// Launch at login (kept in sync with the autostart plugin).
     pub open_at_login: bool,
+    /// UI language override: "" (system) | "en" | "zh-Hans" | "zh-Hant".
+    pub language: String,
 }
 
 impl Default for Settings {
@@ -59,6 +61,7 @@ impl Default for Settings {
             ignore_confidential_content: true,
             link_previews: true,
             open_at_login: false,
+            language: String::new(),
         }
     }
 }

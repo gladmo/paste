@@ -36,6 +36,8 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.history.1day": "1 Day",
     "replica.rules.add-app": "Add Application…",
     "replica.shortcut.modifier-only": "Modifier keys only",
+    "replica.settings.language": "Language",
+    "replica.settings.language-system": "System Default",
   },
   "zh-Hans": {
     "replica.tab.history": "历史记录",
@@ -54,6 +56,8 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.history.1day": "1 天",
     "replica.rules.add-app": "添加应用程序…",
     "replica.shortcut.modifier-only": "仅修饰键",
+    "replica.settings.language": "语言",
+    "replica.settings.language-system": "跟随系统",
   },
   "zh-Hant": {
     "replica.tab.history": "歷史記錄",
@@ -72,6 +76,8 @@ const REPLICA: Record<Locale, Record<string, string>> = {
     "replica.history.1day": "1 天",
     "replica.rules.add-app": "加入應用程式…",
     "replica.shortcut.modifier-only": "僅修飾鍵",
+    "replica.settings.language": "語言",
+    "replica.settings.language-system": "跟隨系統",
   },
 };
 
@@ -106,6 +112,15 @@ export function translate(locale: Locale, key: StringKey, ...args: (string | num
     s = s.replace("%@", String(arg));
   }
   return s;
+}
+
+/** Apply the persisted language setting ("" = follow the system). */
+export function applyLanguageSetting(lang: string | null | undefined) {
+  if (lang === "en" || lang === "zh-Hans" || lang === "zh-Hant") {
+    useI18n.setState({ locale: lang });
+  } else {
+    useI18n.setState({ locale: detectLocale() });
+  }
 }
 
 interface I18nState {

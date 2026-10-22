@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { listen } from "@tauri-apps/api/event";
 
-import { useT } from "../i18n";
+import { applyLanguageSetting, useT } from "../i18n";
 import { THEME } from "../ui/theme";
 import { packedToCss } from "../types";
 import type { Clip, PanelView, Pinboard } from "../types";
@@ -148,8 +148,16 @@ export function Overlay() {
   // ---- data refresh -------------------------------------------------------
   useEffect(() => {
     void usePanel.getState().refreshBoards();
-    void useSettings.getState().load();
-    const off = listen("settings:updated", () => void useSettings.getState().load());
+    void useSettings
+      .getState()
+      .load()
+      .then(() => applyLanguageSetting(useSettings.getState().settings.language));
+    const off = listen("settings:updated", () =>
+      void useSettings
+        .getState()
+        .load()
+        .then(() => applyLanguageSetting(useSettings.getState().settings.language)),
+    );
     return () => {
       off.then((fn) => fn());
     };

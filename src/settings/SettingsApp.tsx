@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { useT } from "../i18n";
+import { LOCALES, LOCALE_LABELS, applyLanguageSetting, useT } from "../i18n";
 import { useSettings } from "../stores/settings";
 import type { Settings } from "../stores/settings";
 import { Group, RadioList, Row, ShortcutField, Toggle, formatShortcut } from "./controls";
@@ -41,6 +41,24 @@ function GeneralPane() {
             onChange={(v) => void update({ soundEffects: v })}
             label={t("settings.general.application.sound-effects")}
           />
+        </Row>
+        <Row title={t("replica.settings.language")}>
+          <select
+            value={settings.language}
+            onChange={(e) => {
+              const lang = e.target.value;
+              void update({ language: lang });
+              applyLanguageSetting(lang);
+            }}
+            className="h-[24px] cursor-pointer rounded-[5px] bg-[rgba(255,255,255,0.09)] px-2 text-[12px] text-neutral-100 outline-none ring-1 ring-[rgba(255,255,255,0.12)]"
+          >
+            <option value="">{t("replica.settings.language-system")}</option>
+            {LOCALES.map((l) => (
+              <option key={l} value={l}>
+                {LOCALE_LABELS[l]}
+              </option>
+            ))}
+          </select>
         </Row>
       </Group>
     </div>
@@ -344,7 +362,9 @@ export function SettingsApp() {
   const load = useSettings((s) => s.load);
 
   useEffect(() => {
-    void load();
+    void load().then(() => {
+      applyLanguageSetting(useSettings.getState().settings.language);
+    });
   }, [load]);
 
   const panes: Array<{ id: PaneId; label: string }> = [

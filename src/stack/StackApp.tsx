@@ -3,7 +3,8 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { useT } from "../i18n";
+import { applyLanguageSetting, useT } from "../i18n";
+import { useSettings } from "../stores/settings";
 import type { Clip } from "../types";
 import { TypeIcon } from "../overlay/ClipCard";
 import { formatTime } from "../overlay/preview";
@@ -53,11 +54,22 @@ export function StackApp() {
 
   useEffect(() => {
     void refresh();
+    void useSettings
+      .getState()
+      .load()
+      .then(() => applyLanguageSetting(useSettings.getState().settings.language));
     const off1 = listen("clips:updated", () => void refresh());
     const off2 = listen("stack:show", () => void refresh());
+    const off3 = listen("settings:updated", () =>
+      void useSettings
+        .getState()
+        .load()
+        .then(() => applyLanguageSetting(useSettings.getState().settings.language)),
+    );
     return () => {
       off1.then((fn) => fn());
       off2.then((fn) => fn());
+      off3.then((fn) => fn());
     };
   }, [refresh]);
 

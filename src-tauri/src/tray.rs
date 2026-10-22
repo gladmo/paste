@@ -5,11 +5,6 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::pause;
 use crate::settings::Settings;
 
-fn open_url(app: &AppHandle, url: &str) {
-    let _ = std::process::Command::new("open").arg(url).spawn();
-    let _ = app; // silence unused when compiled without this helper's callers
-}
-
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(app, "toggle", "Show Paste", true, None::<&str>)?;
 
@@ -31,8 +26,6 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let erase = MenuItem::with_id(app, "erase", "Erase History…", true, None::<&str>)?;
     let manage = MenuItem::with_id(app, "manage", "Manage Pinboards…", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let help = MenuItem::with_id(app, "help", "Help Center", true, None::<&str>)?;
-    let feedback = MenuItem::with_id(app, "feedback", "Send Feedback", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Paste", true, None::<&str>)?;
 
     Menu::with_items(
@@ -45,9 +38,6 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &manage,
             &PredefinedMenuItem::separator(app)?,
             &settings,
-            &PredefinedMenuItem::separator(app)?,
-            &help,
-            &feedback,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
@@ -96,8 +86,6 @@ pub fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
             "settings" => crate::settings::open_window(app),
-            "help" => open_url(app, "https://pasteapp.io/help"),
-            "feedback" => open_url(app, "https://pasteapp.io/contact"),
             "quit" => app.exit(0),
             _ => {}
         })

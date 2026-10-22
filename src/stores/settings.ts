@@ -19,6 +19,8 @@ export interface Settings {
   ignoreConfidentialContent: boolean;
   linkPreviews: boolean;
   openAtLogin: boolean;
+  /** "" = follow system; otherwise a concrete Locale. */
+  language: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ignoreConfidentialContent: true,
   linkPreviews: true,
   openAtLogin: false,
+  language: "",
 };
 
 interface SettingsState {
