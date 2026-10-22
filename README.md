@@ -6,6 +6,12 @@
 
 ```bash
 pnpm install
+just dev           # 开发（等价 pnpm tauri dev，自动装依赖）
+just release       # 产出 .app / .dmg 并打印路径
+just release-open  # 构建后在 Finder 中打开 .app
+just release-universal  # 通用二进制（Apple Silicon + Intel）
+
+# 或直接使用 pnpm：
 pnpm tauri dev     # 开发
 pnpm tauri build   # 产出 .app / .dmg
 ```
