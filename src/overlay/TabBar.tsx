@@ -56,6 +56,7 @@ function Tab({
           paddingLeft: THEME.tab.pillPadLeft,
           paddingRight: THEME.tab.pillPadRight,
           gap: THEME.tab.innerGap,
+          fontSize: THEME.tab.fontSize,
         }}
         onClick={onClick}
         onContextMenu={onContext}
@@ -83,7 +84,7 @@ function Tab({
 
   return chip(
     <>
-      <span className="flex shrink-0 items-center justify-center" style={{ color: active ? THEME.tab.textActive : THEME.tab.textInactive }}>
+      <span className="flex shrink-0 items-center justify-center" style={{ color: THEME.tab.textInactive }}>
         {icon}
       </span>
       {editingLabel != null ? (
