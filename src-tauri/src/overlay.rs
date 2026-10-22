@@ -37,6 +37,13 @@ static LAST_TARGET: Mutex<Option<i32>> = Mutex::new(None);
 /// not us, the user clicked away and the panel closes.
 static LAST_FRONT: Mutex<Option<i32>> = Mutex::new(None);
 
+/// When the panel was last shown. macOS briefly reshuffles the key window
+/// right after a non-activating panel grabs key focus while its app is not
+/// active; resign notifications inside this grace window are ignored so the
+/// panel does not flash away the moment the hotkey opens it.
+static SHOWN_AT: Mutex<Option<Instant>> = Mutex::new(None);
+const RESIGN_GRACE: Duration = Duration::from_millis(300);
+
 /// Record the frontmost app if it is not us. Called when the panel shows
 /// (the app the user was just using) and when the panel resigns key status
 /// (the app the user clicked away to). Never clobbers the stored target
@@ -93,17 +100,24 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let delegate = OverlayDelegate::new();
     let handle = app.clone();
     delegate.window_did_resign_key(move |_notification| {
+        // The original app hides its panel from windowDidResignKey: (the
+        // selector is present in the Paste binary), so clicking anywhere
+        // outside the panel — including another window of the app that was
+        // frontmost when the hotkey fired — dismisses it immediately.
         let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) else {
             return;
         };
         if !panel.is_visible() {
             return;
         }
-        // Information only: for a non-activating panel macOS frequently
-        // reshuffles the key window while our app is not frontmost. Closing
-        // on resign makes the panel flash away right after the hotkey opens
-        // it. Closing decisions are made by the frontmost-app watcher below.
-        crate::paste::log_info("[overlay] resign-key (visible)");
+        let shown_at = SHOWN_AT.lock().ok().and_then(|g| *g);
+        if shown_at.is_some_and(|t| t.elapsed() < RESIGN_GRACE) {
+            // Key-window reshuffle right after show, not a user click-away.
+            crate::paste::log_info("[overlay] resign-key ignored (grace)");
+            return;
+        }
+        crate::paste::log_info("[overlay] resign-key -> hide");
+        crate::overlay::hide(&handle);
     });
     panel.set_event_handler(Some(delegate.as_ref()));
 
@@ -190,6 +204,9 @@ pub fn show(app: &AppHandle) {
             return;
         };
         panel.show_and_make_key();
+        if let Ok(mut shown) = SHOWN_AT.lock() {
+            *shown = Some(Instant::now());
+        }
         if let Some(window) = handle.get_webview_window(PANEL_LABEL) {
             let _ = window.emit("overlay:show", ());
         }
