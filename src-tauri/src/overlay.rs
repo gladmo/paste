@@ -20,7 +20,7 @@ const TOGGLE_COOLDOWN: Duration = Duration::from_millis(300);
 
 /// Panel geometry when shown: spans the whole width of the cursor's screen,
 /// sits flush against the bottom edge like the macOS Dock.
-const PANEL_HEIGHT: f64 = 332.0;
+const PANEL_HEIGHT: f64 = 368.0;
 const PANEL_BOTTOM_GAP: f64 = 0.0;
 
 static LAST_TOGGLE: Mutex<Option<Instant>> = Mutex::new(None);

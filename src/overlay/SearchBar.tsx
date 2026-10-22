@@ -57,8 +57,7 @@ export function SearchBar({ focusRef }: { focusRef: React.RefObject<HTMLInputEle
         aria-label={t("general.search")}
         title={t("general.search")}
         onClick={() => setSearchOpen(true)}
-        className="flex h-[32px] w-[32px] shrink-0 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:bg-[rgba(255,255,255,0.08)]"
-        style={{ color: THEME.search.icon }}
+        className="mr-1 flex shrink-0 cursor-pointer items-center justify-center rounded-full p-1.5 text-neutral-400 transition-colors hover:bg-[rgba(255,255,255,0.05)] hover:text-white"
       >
         <MagnifierIcon size={THEME.search.iconSize} />
       </button>
@@ -67,11 +66,12 @@ export function SearchBar({ focusRef }: { focusRef: React.RefObject<HTMLInputEle
 
   return (
     <div
-      className="flex shrink-0 items-center gap-2 rounded-[6px] px-3"
+      className="flex shrink-0 items-center gap-2 rounded-full border px-3 shadow-sm"
       style={{
         width: THEME.search.widthOpen,
-        height: THEME.search.height + 4,
+        height: THEME.search.height,
         backgroundColor: THEME.search.bg,
+        borderColor: "rgba(255,255,255,0.1)",
       }}
     >
       <MagnifierIcon size={14} />
@@ -84,7 +84,7 @@ export function SearchBar({ focusRef }: { focusRef: React.RefObject<HTMLInputEle
         }}
         placeholder={t("general.search")}
         spellCheck={false}
-        className="w-full min-w-0 bg-transparent text-[13px] font-medium outline-none"
+        className="w-full min-w-0 bg-transparent text-xs font-normal outline-none"
         style={{ color: THEME.search.text }}
       />
       {query && (

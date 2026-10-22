@@ -79,15 +79,22 @@ export function clipMeta(clip: Clip, t: ReturnType<typeof useT>): string {
       ? t("replica.meta.files", paths.length)
       : t("replica.meta.file");
   }
-  if (
-    clip.contentType === "text" ||
-    clip.contentType === "richtext" ||
-    clip.contentType === "link"
-  ) {
+  if (clip.contentType === "link") {
+    return linkDomain(clip.content);
+  }
+  if (clip.contentType === "color") {
+    try {
+      const m = clip.meta ? JSON.parse(clip.meta) : null;
+      return String(m?.color ?? clip.content).toUpperCase();
+    } catch {
+      return clip.content.toUpperCase();
+    }
+  }
+  if (clip.contentType === "text" || clip.contentType === "richtext") {
     const n = (clip.plainContent ?? clip.content).length;
     return n === 1 ? t("replica.meta.character", n) : t("replica.meta.characters", n);
   }
-  // Images and colours have no localized plural form in the original app.
+  // Images have no localized plural form in the original app.
   return "";
 }
 
@@ -161,11 +168,11 @@ export function AppIcon({ bundleId, name, size = 38 }: { bundleId?: string | nul
 export function CardPreview({ clip }: { clip: Clip }) {
   if (clip.contentType === "image") {
     return (
-      <div className="min-h-0 flex-1 overflow-hidden rounded-[7px]">
+      <div className="min-h-0 flex-1 overflow-hidden">
         <img
           src={convertFileSrc(clip.content)}
           alt="clip"
-          className="h-full w-full object-contain"
+          className="h-full w-full object-cover"
           draggable={false}
         />
       </div>
@@ -178,12 +185,12 @@ export function CardPreview({ clip }: { clip: Clip }) {
     const bg = extractBgColor(sanitized);
     return (
       <div
-        className="min-h-0 flex-1 overflow-hidden rounded-[7px] p-2 pb-[26px]"
+        className="min-h-0 flex-1 overflow-hidden"
         style={{ backgroundColor: bg ?? "rgba(255,255,255,0.04)" }}
       >
         <div
-          className="rich-preview h-full overflow-hidden text-[13px] leading-snug"
-          style={{ color: "#dcdcdc" }}
+          className="rich-preview h-full overflow-hidden text-[13px] leading-relaxed"
+          style={{ color: "#e5e5e5" }}
           dangerouslySetInnerHTML={{ __html: sanitized }}
         />
       </div>
@@ -191,7 +198,7 @@ export function CardPreview({ clip }: { clip: Clip }) {
   }
   if (clip.contentType === "link") {
     return (
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden p-2 pb-[26px]">
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-hidden">
         {clip.title && (
           <p className="line-clamp-2 text-[13px] font-semibold" style={{ color: "#dcdcdc" }}>
             {clip.title}
@@ -207,7 +214,7 @@ export function CardPreview({ clip }: { clip: Clip }) {
   if (clip.contentType === "file") {
     const paths = (clip.plainContent ?? clip.content).split("\n").filter(Boolean);
     return (
-      <div className="min-h-0 flex-1 space-y-1 overflow-hidden p-2 pb-[26px]">
+      <div className="min-h-0 flex-1 space-y-1 overflow-hidden">
         {paths.slice(0, 4).map((p) => (
           <p key={p} className="truncate text-[12px]" style={{ color: "#dcdcdc" }}>
             {p.split("/").pop()}
@@ -228,7 +235,7 @@ export function CardPreview({ clip }: { clip: Clip }) {
       /* keep default */
     }
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-3 pb-[26px]">
+      <div className="flex min-h-0 flex-1 items-center justify-center">
         <div
           className="h-full w-full rounded-[8px] ring-1 ring-inset ring-[rgba(255,255,255,0.2)]"
           style={{ backgroundColor: hex }}
@@ -239,8 +246,10 @@ export function CardPreview({ clip }: { clip: Clip }) {
   return (
     <div className="min-h-0 flex-1 overflow-hidden p-2.5 pb-[26px]">
       <p
-        className="line-clamp-7 whitespace-pre-wrap break-all text-[13px] leading-snug"
-        style={{ color: "#dcdcdc" }}
+        className={`line-clamp-8 whitespace-pre-wrap break-all text-xs leading-relaxed ${
+          /[\u4e00-\u9fff]/.test(clip.content) ? "font-sans text-[12px]" : "font-mono"
+        }`}
+        style={{ color: "#e5e5e5" }}
       >
         {clip.content}
       </p>

@@ -1,81 +1,69 @@
 /**
- * UI constants measured pixel-by-pixel from design/主界面.png (2x Retina).
- * All values are logical points.
+ * UI constants for the card-shelf design (paste-ui.html):
+ * glass panel, 240×280 cards with colored type headers, source-app badges
+ * and a content-meta footer.
  */
 export const THEME = {
   panel: {
-    /** Full-width bottom panel height. */
-    height: 332,
-    /**
-     * The real blur comes from macOS vibrancy (HudWindow, applied in Rust).
-     * This translucent tint only adds contrast over the material — and still
-     * yields a usable dark panel should the window effect be unavailable.
-     * Square corners, no top border (measured).
-     */
-    background: "rgba(18, 19, 21, 0.30)",
+    /** Full-width bottom panel height: 12 + 28 toolbar + 12 + 8 + 280 + 8 + 20. */
+    height: 368,
+    /** Glass tint over the macOS vibrancy blur. */
+    background: "rgba(22, 23, 26, 0.88)",
+    borderTop: "1px solid rgba(255, 255, 255, 0.10)",
+    paddingTop: 12,
+    /** Toolbar row height + its bottom margin. */
+    headerHeight: 28,
+    headerMargin: 12,
+    paddingBottom: 20,
+    stripPaddingY: 8,
+    stripPaddingX: 24,
   },
   toolbar: {
-    /** Controls (search icon / pill / dots) are vertically centered at ~29.75pt. */
-    height: 60,
-    /** Distance between toolbar items. */
-    gap: 18,
-    /** Right margin of the "⋯" glyph (button padding is compensated). */
-    dotsRight: 16.5,
+    gap: 8,
+    /** Right margin of the "⋯" options button (right-7). */
+    dotsRight: 28,
   },
   search: {
-    /** Collapsed state is a bare 16pt magnifier icon. */
     iconSize: 16,
-    icon: "#9da1a2",
-    /** Expanded input pill. */
-    bg: "#3d4245",
-    text: "#e1e2e2",
+    icon: "#a3a3a3",
+    bg: "#2b2d33",
+    text: "#f5f5f5",
     widthOpen: 300,
-    height: 24,
+    height: 28,
   },
   tab: {
-    /** Active tab background chip (#3d4245, 27.5pt tall, radius 5). */
-    pillBg: "#3d4245",
-    pillHeight: 27.5,
-    pillRadius: 5,
-    pillPadLeft: 15,
-    pillPadRight: 12.5,
-    /** Icon-to-label gap inside a tab. */
-    innerGap: 8,
-    textActive: "#e1e2e2",
-    textInactive: "#9a9c9e",
-    fontSize: 13,
-    /** History tab clock icon; pinboard tabs are 13pt solid color dots. */
-    iconSize: 13,
-    dotSize: 13,
+    /** Active tab pill. */
+    pillBg: "#2b2d33",
+    fontSize: 12,
+    iconSize: 14,
+    /** Pinboard dot size (w-2 h-2). */
+    dotSize: 8,
+    textActive: "#ffffff",
+    textInactive: "#d4d4d4",
   },
   card: {
-    /** Outer 248pt box includes a 4pt border slot on every card. */
-    outer: 248,
-    border: 4,
-    content: 240,
-    /** Gap between card boxes (pitch 264pt). */
-    gap: 16,
-    radius: 11,
-    bg: "#141414",
-    selectedBorder: "#0077fc",
-    /** Content-meta caption: one centered gray line at the card bottom. */
-    footerText: "#959595",
+    width: 240,
+    height: 280,
+    gap: 14,
+    radius: 16,
+    bg: "#1d1f23",
+    active: "#007aff",
+    /** Footer meta line. */
+    footerText: "#a3a3a3",
     footerFontSize: 11,
-    /** Caption baseline block offset from the card's outer bottom edge. */
-    footerBottom: 12,
-    /** Content-type glyph in the bottom-right corner. */
-    iconColor: "#8c8c8c",
-    iconSize: 9.5,
-    iconRight: 14,
-    iconBottom: 14,
   },
-  strip: {
-    paddingLeft: 20,
-    paddingTop: 4,
-    paddingBottom: 20,
-  },
+  /** Card header background per content type. */
+  headerBg: {
+    text: "#1b72e8",
+    richtext: "#1b72e8",
+    link: "#f05252",
+    file: "#64748b",
+    image: "#f08800",
+    color: "#8b5cf6",
+    default: "#1b72e8",
+  } as Record<string, string>,
   glyphs: {
-    gray: "#9da1a2",
+    gray: "#a3a3a3",
   },
 } as const;
 

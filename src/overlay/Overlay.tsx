@@ -78,7 +78,7 @@ function SelectionBar() {
   const clearSelection = usePanel((s) => s.clearSelection);
   const stopSelecting = usePanel((s) => s.stopSelecting);
   return (
-    <div className="flex h-[60px] shrink-0 items-center justify-center gap-3 px-6 text-[12px] font-medium text-neutral-200">
+    <div className="mb-3 flex h-[28px] shrink-0 items-center justify-center gap-3 px-7 text-[12px] font-medium text-neutral-200">
       <span className="text-neutral-400">{t("general.select-items")}</span>
       {selected.length > 0 && (
         <span className="rounded-full bg-[rgba(10,132,255,0.22)] px-2 py-0.5 text-[11px] font-semibold text-[#7cb8ff]">
@@ -460,6 +460,20 @@ export function Overlay() {
     listRef.current?.scrollBy({ left: dir * 500, behavior: "smooth" });
   };
 
+  // Vertical wheel scrolls the card shelf horizontally (paste-ui.html).
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const onWheel = (evt: WheelEvent) => {
+      if (Math.abs(evt.deltaY) > Math.abs(evt.deltaX)) {
+        evt.preventDefault();
+        el.scrollLeft += evt.deltaY;
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [visible.length]);
+
   return (
     <div
       className={`relative flex h-full flex-col overflow-hidden transition-all duration-150 ease-out ${
@@ -467,14 +481,17 @@ export function Overlay() {
       }`}
       style={{
         backgroundColor: THEME.panel.background,
+        borderTop: THEME.panel.borderTop,
+        paddingTop: THEME.panel.paddingTop,
+        paddingBottom: THEME.panel.paddingBottom,
       }}
     >
       {selecting ? (
         <SelectionBar />
       ) : (
         <div
-          className="relative flex h-[60px] shrink-0 items-center justify-center px-10"
-          style={{ gap: THEME.toolbar.gap }}
+          className="relative mb-3 flex shrink-0 items-center justify-center px-7"
+          style={{ height: THEME.panel.headerHeight, gap: THEME.toolbar.gap }}
           onContextMenu={(e) => {
             // Panel-level menu: Erase History (tray menu lands in P5).
             e.preventDefault();
@@ -493,8 +510,8 @@ export function Overlay() {
               const r = e.currentTarget.getBoundingClientRect();
               setToolbarMenu({ x: r.left - 180, y: r.bottom + 6 });
             }}
-            className="absolute top-1/2 flex h-[32px] w-[28px] -translate-y-1/2 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:bg-[rgba(255,255,255,0.08)]"
-            style={{ right: THEME.toolbar.dotsRight, color: THEME.glyphs.gray }}
+            className="absolute top-1/2 flex -translate-y-1/2 cursor-pointer items-center justify-center rounded-md p-1 text-neutral-400 transition-colors hover:bg-[rgba(255,255,255,0.05)] hover:text-white"
+            style={{ right: THEME.toolbar.dotsRight }}
           >
             <svg width="16" height="4" viewBox="0 0 16 4" fill="currentColor">
               <circle cx="2" cy="2" r="1.6" />
@@ -512,12 +529,10 @@ export function Overlay() {
           <>
             <div
               ref={listRef}
-              className="group/strip flex h-full items-start overflow-x-auto overflow-y-hidden"
+              className="custom-scrollbar group/strip flex h-full items-stretch overflow-x-auto overflow-y-hidden"
               style={{
-                scrollbarWidth: "none",
-                paddingLeft: THEME.strip.paddingLeft,
-                paddingTop: THEME.strip.paddingTop,
-                paddingBottom: THEME.strip.paddingBottom,
+                paddingInline: THEME.panel.stripPaddingX,
+                paddingBlock: THEME.panel.stripPaddingY,
                 gap: THEME.card.gap,
               }}
               onScroll={(e) => {

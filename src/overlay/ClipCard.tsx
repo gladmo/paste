@@ -3,9 +3,9 @@ import React from "react";
 import { useT } from "../i18n";
 import { THEME } from "../ui/theme";
 import type { Clip } from "../types";
-import { CardPreview, clipMeta } from "./preview";
+import { AppIcon, CardPreview, clipMeta, formatTime } from "./preview";
 
-/** Small monochrome content-type glyph (cards, Paste Stack rows). */
+/** Small monochrome content-type glyph (Paste Stack rows reuse it). */
 export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
   const common = {
     width: size,
@@ -49,12 +49,40 @@ export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
       </svg>
     );
   }
-  // text / richtext — matches the original's tiny "T" caption glyph
+  // text / richtext — "T" glyph
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
       <path d="M5 5h14" />
       <path d="M12 5v15" />
     </svg>
+  );
+}
+
+/** Monogram fallback for source apps without a bundled icon (GO / S3 / GH …). */
+const MONOGRAM_COLORS = ["#22d3ee", "#f59e0b", "#a78bfa", "#34d399", "#f472b6", "#60a5fa", "#fb923c"];
+
+function monogram(name: string): { text: string; color: string } {
+  const letters = name.replace(/[^\p{L}\p{N} ]/gu, "").trim();
+  const words = letters.split(/\s+/).filter(Boolean);
+  const text = words.length >= 2 ? words[0][0] + words[1][0] : letters.slice(0, 2);
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { text: (text || "?").toUpperCase(), color: MONOGRAM_COLORS[h % MONOGRAM_COLORS.length] };
+}
+
+function SourceBadge({ clip }: { clip: Clip }) {
+  const mono = monogram(clip.sourceName ?? "?");
+  return (
+    <div className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-black/60 shadow-inner">
+      <span className="absolute inset-0 flex items-center justify-center text-[11px] font-black tracking-tight" style={{ color: mono.color }}>
+        {mono.text}
+      </span>
+      {clip.sourceApp && (
+        <div className="absolute inset-0">
+          <AppIcon bundleId={clip.sourceApp} name={clip.sourceName} size={28} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -67,11 +95,10 @@ export interface CardHandlers {
 }
 
 /**
- * One history card, measured from the reference screenshot:
- * 248pt outer box with a 4pt border slot (blue when active, transparent
- * otherwise) around 240pt of content, 11pt radius, no glow. The content
- * fills the card; the content-meta caption ("59 characters") is overlaid
- * centered at the bottom with a tiny type glyph in the bottom-right corner.
+ * Card-shelf design (paste-ui.html): 240×280 rounded-2xl card with a colored
+ * type header (type name, relative time, source-app badge), a full preview
+ * body and a meta footer ("59 characters" / domain + index number). The
+ * active card is highlighted with a 2px #007aff ring.
  */
 export function ClipCard({
   clip,
@@ -93,11 +120,12 @@ export function ClipCard({
   handlers: CardHandlers;
 }) {
   const t = useT();
-  const c = THEME.card;
+  const typeKey = `replica.type.${clip.contentType === "richtext" ? "text" : clip.contentType}`;
+  const headerBg = THEME.headerBg[clip.contentType] ?? THEME.headerBg.default;
   const meta = clipMeta(clip, t);
 
   return (
-    <div
+    <article
       data-index={index}
       role="option"
       aria-selected={isActive}
@@ -111,106 +139,101 @@ export function ClipCard({
       }}
       onDoubleClick={handlers.onOpen}
       onContextMenu={handlers.onContext}
-      className="group relative shrink-0 cursor-pointer box-border"
+      className={`group relative flex shrink-0 cursor-pointer flex-col overflow-hidden transition-all duration-150 ${
+        isActive
+          ? "rounded-2xl shadow-2xl ring-2 ring-[#007aff]"
+          : "rounded-2xl border shadow-xl hover:border-[rgba(255,255,255,0.2)]"
+      }`}
       style={{
-        width: c.outer,
-        height: c.outer,
-        borderRadius: c.radius,
-        border: `${c.border}px solid ${isActive ? c.selectedBorder : "transparent"}`,
-        backgroundColor: c.bg,
+        width: THEME.card.width,
+        height: THEME.card.height,
+        backgroundColor: THEME.card.bg,
+        ...(isActive ? {} : { borderColor: "rgba(255,255,255,0.05)" }),
       }}
     >
-      {/* content (240pt inside the border, full-bleed) */}
-      <div
-        className="absolute inset-[4px] flex flex-col overflow-hidden"
-        style={{ borderRadius: c.radius - c.border }}
-      >
-        <CardPreview clip={clip} />
-
-        {/* selection checkbox overlay */}
-        {(selecting || selected) && (
-          <div
-            className="absolute left-[8px] top-[8px] z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full"
-            style={{
-              backgroundColor: selected ? "#0077fc" : "rgba(0,0,0,0.45)",
-              boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.6)",
-            }}
-          >
-            {selected && (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-          </div>
-        )}
-
-        {/* hover pin toggle */}
-        {!selecting && (
-          <button
-            type="button"
-            aria-label={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
-            title={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
-            onClick={(e) => {
-              e.stopPropagation();
-              handlers.onTogglePin();
-            }}
-            className={`absolute right-[8px] top-[8px] z-10 cursor-pointer rounded-md p-1 transition-colors ${
-              clip.pinned
-                ? "text-blue-300"
-                : "text-neutral-300 opacity-0 group-hover:opacity-70 hover:!opacity-100"
-            }`}
-            style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill={clip.pinned ? "currentColor" : "none"}
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 17v5" />
-              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
-            </svg>
-          </button>
-        )}
-      </div>
-
-      {/* content-meta caption, centered on the card bottom */}
-      {meta && (
-        <div
-          className="pointer-events-none absolute inset-x-0 flex justify-center px-[34px]"
-          style={{ bottom: c.footerBottom }}
-        >
-          <span
-            className="truncate font-medium"
-            style={{ color: c.footerText, fontSize: c.footerFontSize, lineHeight: 1 }}
-          >
-            {meta}
+      {/* type header: label + time + source app badge */}
+      <header className="flex items-center justify-between px-3.5 py-2 text-white" style={{ backgroundColor: headerBg }}>
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-[13px] font-bold leading-tight">{t(typeKey)}</span>
+          <span className="text-[11px] leading-tight" style={{ color: "rgba(255,255,255,0.8)" }}>
+            {formatTime(clip.copiedAt, t)}
           </span>
         </div>
-      )}
+        <SourceBadge clip={clip} />
+      </header>
 
-      {/* bottom-right type glyph — replaced by the quick-paste number while
-          the ⌘ modifier is held */}
-      <div
-        className="pointer-events-none absolute flex items-center justify-center"
-        style={{
-          right: c.iconRight,
-          bottom: c.iconBottom,
-          color: c.iconColor,
-          height: 14,
-        }}
-      >
-        {showIndex && metaDown && index < 9 ? (
-          <span className="flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[rgba(255,255,255,0.22)] text-[9px] font-bold text-white ring-1 ring-[rgba(255,255,255,0.35)]">
-            {index + 1}
-          </span>
-        ) : meta ? (
-          <TypeIcon type={clip.contentType} size={c.iconSize} />
-        ) : null}
+      {/* preview body + meta footer */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className={`relative min-h-0 flex-1 overflow-hidden ${clip.contentType === "image" ? "" : "p-3"}`}>
+          <CardPreview clip={clip} />
+
+          {/* selection checkbox */}
+          {(selecting || selected) && (
+            <div
+              className="absolute left-[8px] top-[8px] z-10 flex h-[18px] w-[18px] items-center justify-center rounded-full"
+              style={{
+                backgroundColor: selected ? "#007aff" : "rgba(0,0,0,0.45)",
+                boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.6)",
+              }}
+            >
+              {selected && (
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+            </div>
+          )}
+
+          {/* hover pin toggle */}
+          {!selecting && (
+            <button
+              type="button"
+              aria-label={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
+              title={clip.pinned ? t("general.action.unpin") : t("general.action.pin")}
+              onClick={(e) => {
+                e.stopPropagation();
+                handlers.onTogglePin();
+              }}
+              className={`absolute right-[8px] top-[8px] z-10 cursor-pointer rounded-md p-1 transition-opacity ${
+                clip.pinned
+                  ? "text-blue-300"
+                  : "text-neutral-300 opacity-0 group-hover:opacity-70 hover:!opacity-100"
+              }`}
+              style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill={clip.pinned ? "currentColor" : "none"}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 17v5" />
+                <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* meta footer: content meta + index */}
+        <footer
+          className="flex shrink-0 items-center justify-between border-t pt-1.5"
+          style={{ borderColor: "rgba(255,255,255,0.05)", paddingInline: 12, paddingBottom: 10, color: THEME.card.footerText, fontSize: THEME.card.footerFontSize }}
+        >
+          <span className="truncate font-medium">{meta}</span>
+          {showIndex && (
+            <span
+              className={`ml-2 shrink-0 tabular-nums ${
+                metaDown && index < 9 ? "rounded-full bg-[rgba(255,255,255,0.22)] px-1.5 font-bold text-white" : ""
+              }`}
+            >
+              {index + 1}
+            </span>
+          )}
+        </footer>
       </div>
-    </div>
+    </article>
   );
 }

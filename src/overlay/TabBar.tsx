@@ -48,14 +48,11 @@ function Tab({
   const chip = (children: React.ReactNode) =>
     active ? (
       <div
-        className="flex shrink-0 cursor-pointer items-center"
+        className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 shadow-sm"
         style={{
-          height: THEME.tab.pillHeight,
           backgroundColor: THEME.tab.pillBg,
-          borderRadius: THEME.tab.pillRadius,
-          paddingLeft: THEME.tab.pillPadLeft,
-          paddingRight: THEME.tab.pillPadRight,
-          gap: THEME.tab.innerGap,
+          borderColor: "rgba(255,255,255,0.1)",
+          color: THEME.tab.textActive,
           fontSize: THEME.tab.fontSize,
         }}
         onClick={onClick}
@@ -70,10 +67,8 @@ function Tab({
         onClick={onClick}
         onContextMenu={onContext}
         onDoubleClick={onDouble}
-        className="flex shrink-0 cursor-pointer items-center rounded-[5px] px-[8px] transition-colors hover:bg-[rgba(255,255,255,0.05)]"
+        className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors hover:bg-[rgba(255,255,255,0.05)] hover:text-white"
         style={{
-          height: THEME.tab.pillHeight,
-          gap: THEME.tab.innerGap,
           color: THEME.tab.textInactive,
           fontSize: THEME.tab.fontSize,
         }}
@@ -84,7 +79,7 @@ function Tab({
 
   return chip(
     <>
-      <span className="flex shrink-0 items-center justify-center" style={{ color: THEME.tab.textInactive }}>
+      <span className="flex shrink-0 items-center justify-center" style={{ color: "rgba(255,255,255,0.75)" }}>
         {icon}
       </span>
       {editingLabel != null ? (
@@ -141,7 +136,7 @@ export function TabBar() {
 
   return (
     <>
-      <div className="flex min-w-0 items-center" style={{ gap: 10 }}>
+      <div className="flex min-w-0 items-center gap-2">
         <Tab
           label={t("replica.tab.history")}
           active={view === "history"}
@@ -179,6 +174,7 @@ export function TabBar() {
                     width: THEME.tab.dotSize,
                     height: THEME.tab.dotSize,
                     backgroundColor: packedToCss(board.color),
+                    boxShadow: "0 0 2px rgba(0,0,0,0.4)",
                   }}
                 />
               }
