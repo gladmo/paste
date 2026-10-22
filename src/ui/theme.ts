@@ -62,11 +62,11 @@ export const THEME = {
     footerText: "#959595",
     footerFontSize: 11,
     /** Caption baseline block offset from the card's outer bottom edge. */
-    footerBottom: 14,
+    footerBottom: 12,
     /** Content-type glyph in the bottom-right corner. */
     iconColor: "#8c8c8c",
     iconSize: 9.5,
-    iconRight: 17,
+    iconRight: 14,
     iconBottom: 14,
   },
   strip: {
