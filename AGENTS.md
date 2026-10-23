@@ -77,5 +77,6 @@ iCloud 同步、订阅/付费墙、Firebase、AppIntents、Onboarding、What's N
 
 - `tauri.conf.json` 的 `beforeDevCommand` 先 `pnpm build` 再起 vite —— 不要"优化"掉（全新 clone 没有 dist 会报 frontendDist 错误）。
 - overlay 显示后 300ms 内的 resignKey 是 macOS key 窗口抖动，不是用户点击（见 overlay.rs `RESIGN_GRACE`），处理焦点逻辑时别绕过它。
+- 显示采用 prepare-then-show：`overlay:show` 只让 webview 重置+取数，`overlay_ready` 才真正显示，`overlay:revealed` 驱动淡入。DEV 的整页重载发生在**隐藏 400ms 后**（不是呼出时），兜底显示 debug 4s / release 250ms —— 改这些时序前先理解为什么。
 - 富文本卡片渲染前必须 DOMPurify（剪贴板 HTML 不可信）。
 - 图片/文件资源走 asset protocol（`convertFileSrc`），scope 在 `tauri.conf.json`。

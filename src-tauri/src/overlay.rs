@@ -49,7 +49,11 @@ const RESIGN_GRACE: Duration = Duration::from_millis(300);
 /// when the webview reports readiness (or after a short fallback). This
 /// keeps stale content from flashing when the panel reappears.
 static SHOW_PENDING: Mutex<bool> = Mutex::new(false);
-const SHOW_FALLBACK: Duration = Duration::from_millis(250);
+/// Debug builds reload the webview on hide (dev freshness), so a summon can
+/// race a page load — wait long enough that the fallback only fires when the
+/// webview is genuinely stuck, never as "gray panel while vite loads".
+const SHOW_FALLBACK: Duration =
+    Duration::from_millis(if cfg!(debug_assertions) { 4000 } else { 250 });
 
 /// Record the frontmost app if it is not us. Called when the panel shows
 /// (the app the user was just using) and when the panel resigns key status
@@ -236,6 +240,11 @@ fn complete_show(app: &AppHandle) -> bool {
         panel.show_and_make_key();
         if let Ok(mut shown) = SHOWN_AT.lock() {
             *shown = Some(Instant::now());
+        }
+        // Drive the fade-in from the moment the panel is really visible —
+        // rAF guessing in the frontend raced the main-thread reveal.
+        if let Some(window) = handle.get_webview_window(PANEL_LABEL) {
+            let _ = window.emit("overlay:revealed", ());
         }
     });
     true

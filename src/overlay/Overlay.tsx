@@ -192,20 +192,37 @@ export function Overlay() {
     });
     if (listRef.current) listRef.current.scrollLeft = 0;
     await Promise.all([usePanel.getState().refresh(), usePanel.getState().refreshBoards()]);
+    // Rust reveals the panel here and answers with `overlay:revealed`,
+    // which starts the fade-in — no guessing when the window is visible.
     await invoke("overlay_ready").catch(() => {});
-    requestAnimationFrame(() => requestAnimationFrame(() => usePanel.setState({ anim: 1 })));
   }, []);
 
+  // Dev freshness: the hidden panel's WebView misses vite HMR updates, so
+  // reload shortly after the panel hides (page still live then; the load
+  // finishes while hidden). Summons are instant — the page is preloaded —
+  // and code is fresh from the previous hide. Canceled on re-summon.
+  const devReloadTimer = useRef<number | null>(null);
   useEffect(() => {
-    const off = listen("overlay:show", () => {
-      if (import.meta.env.DEV) {
-        // The hidden panel's WebView misses HMR updates, so reload to
-        // guarantee fresh code. The reload happens while the panel is
-        // still hidden; the mount effect below completes the show.
-        window.location.reload();
-        return;
+    const cancelDevReload = () => {
+      if (devReloadTimer.current !== null) {
+        window.clearTimeout(devReloadTimer.current);
+        devReloadTimer.current = null;
       }
+    };
+    const off = listen("overlay:show", () => {
+      cancelDevReload();
       void prepareAndShow();
+    });
+    const offHide = listen("overlay:hide", () => {
+      if (!import.meta.env.DEV) return;
+      cancelDevReload();
+      devReloadTimer.current = window.setTimeout(() => {
+        devReloadTimer.current = null;
+        window.location.reload();
+      }, 400);
+    });
+    const offRevealed = listen("overlay:revealed", () => {
+      requestAnimationFrame(() => requestAnimationFrame(() => usePanel.setState({ anim: 1 })));
     });
     const offErase = listen("menu:erase-history", () => {
       setConfirmErase(true);
@@ -216,7 +233,10 @@ export function Overlay() {
     // only pre-warms the data for the first summon.
     void prepareAndShow();
     return () => {
+      cancelDevReload();
       off.then((fn) => fn());
+      offHide.then((fn) => fn());
+      offRevealed.then((fn) => fn());
       offErase.then((fn) => fn());
     };
   }, [prepareAndShow]);
