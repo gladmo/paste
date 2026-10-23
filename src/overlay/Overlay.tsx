@@ -118,6 +118,25 @@ export function Overlay() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
+  // Windowed rendering: cards are a fixed pitch (width + gap), so only the
+  // slice around the scroll viewport is mounted; the full-width track keeps
+  // the scrollbar honest. History can hold thousands of clips.
+  const CARD_PITCH = THEME.card.width + THEME.card.gap;
+  const CARD_OVERSCAN = 5;
+  const [cardRange, setCardRange] = useState({ start: 0, end: 12 });
+  const updateCardRange = useCallback((el: HTMLElement) => {
+    const n = usePanel.getState().clips.length;
+    const start = Math.max(
+      0,
+      Math.floor((el.scrollLeft - THEME.panel.stripPaddingX) / CARD_PITCH) - CARD_OVERSCAN,
+    );
+    const end = Math.min(
+      n,
+      Math.ceil((el.scrollLeft + el.clientWidth - THEME.panel.stripPaddingX) / CARD_PITCH) +
+        CARD_OVERSCAN,
+    );
+    setCardRange((prev) => (prev.start === start && prev.end === end ? prev : { start, end }));
+  }, []);
 
   const anim = usePanel((s) => s.anim);
   const query = usePanel((s) => s.query);
@@ -138,6 +157,10 @@ export function Overlay() {
   const [confirmErase, setConfirmErase] = useState(false);
 
   const visible = clips;
+  // Window actually mounted this frame: the scroll window ∪ the active
+  // card's neighbourhood (keyboard navigation must find its card in the DOM).
+  const renderStart = Math.min(cardRange.start, Math.max(0, active - 1));
+  const renderEnd = Math.max(cardRange.end, Math.min(visible.length, active + 2));
 
   // ---- data refresh -------------------------------------------------------
   useEffect(() => {
@@ -248,15 +271,17 @@ export function Overlay() {
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
 
-  // Track scroll arrow availability.
+  // Track scroll arrow availability + the rendered card window.
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    const update = () =>
+    const update = () => {
       setCanScroll({
         left: el.scrollLeft > 8,
         right: el.scrollLeft + el.clientWidth < el.scrollWidth - 8,
       });
+      updateCardRange(el);
+    };
     update();
     el.addEventListener("scroll", update);
     window.addEventListener("resize", update);
@@ -264,7 +289,7 @@ export function Overlay() {
       el.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
-  }, [visible.length]);
+  }, [visible.length, updateCardRange]);
 
   // The configured quick-paste modifier drives the number badges.
   useEffect(() => {
@@ -569,43 +594,64 @@ export function Overlay() {
           <>
             <div
               ref={listRef}
-              className="custom-scrollbar group/strip flex h-full items-stretch overflow-x-auto overflow-y-hidden"
-              style={{
-                paddingInline: THEME.panel.stripPaddingX,
-                paddingBlock: THEME.panel.stripPaddingY,
-                gap: THEME.card.gap,
-              }}
+              className="custom-scrollbar group/strip h-full overflow-x-auto overflow-y-hidden"
               onScroll={(e) => {
                 const el = e.currentTarget;
                 setCanScroll({
                   left: el.scrollLeft > 8,
                   right: el.scrollLeft + el.clientWidth < el.scrollWidth - 8,
                 });
+                updateCardRange(el);
               }}
             >
-              {visible.map((clip, i) => (
-                <ClipCard
-                  key={clip.id}
-                  clip={clip}
-                  index={i}
-                  isActive={i === active}
-                  showIndex
-                  metaDown={metaDown}
-                  selecting={selecting}
-                  selected={selected.includes(clip.id)}
-                  handlers={{
-                    onActivate: () => setActive(i),
-                    onOpen: () => pasteClip(clip.id),
-                    onContext: (e) => {
-                      e.preventDefault();
-                      if (!selecting) setActive(i);
-                      setClipMenu({ x: e.clientX, y: e.clientY, clip });
-                    },
-                    onTogglePin: () => void invoke("toggle_pin", { id: clip.id }).catch(console.error),
-                    onSelectionClick: () => usePanel.getState().toggleSelected(clip.id),
-                  }}
-                />
-              ))}
+              {/* full-width virtual track; cards are absolutely placed */}
+              <div
+                className="relative h-full"
+                style={{
+                  width:
+                    visible.length > 0
+                      ? THEME.panel.stripPaddingX * 2 +
+                        visible.length * CARD_PITCH -
+                        THEME.card.gap
+                      : 0,
+                }}
+              >
+                {visible.slice(renderStart, renderEnd).map((clip, j) => {
+                    const i = renderStart + j;
+                    return (
+                      <div
+                        key={clip.id}
+                        style={{
+                          position: "absolute",
+                          left: THEME.panel.stripPaddingX + i * CARD_PITCH,
+                          top: THEME.panel.stripPaddingY,
+                        }}
+                      >
+                        <ClipCard
+                          clip={clip}
+                          index={i}
+                          isActive={i === active}
+                          showIndex
+                          metaDown={metaDown}
+                          selecting={selecting}
+                          selected={selected.includes(clip.id)}
+                          handlers={{
+                            onActivate: () => setActive(i),
+                            onOpen: () => pasteClip(clip.id),
+                            onContext: (e) => {
+                              e.preventDefault();
+                              if (!selecting) setActive(i);
+                              setClipMenu({ x: e.clientX, y: e.clientY, clip });
+                            },
+                            onTogglePin: () =>
+                              void invoke("toggle_pin", { id: clip.id }).catch(console.error),
+                            onSelectionClick: () => usePanel.getState().toggleSelected(clip.id),
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
 
             {/* edge scroll arrows */}
