@@ -165,7 +165,20 @@ export function Overlay() {
   // Prepare-then-show: reset state and (re)load data while the panel is
   // still hidden, tell Rust to reveal it, and only then fade in — the user
   // never sees the previous summon's content flash before the animation.
+  // Single-flight: StrictMode double-invokes mount effects and an
+  // overlay:show can race the mount prepare; a second concurrent prepare
+  // would reset anim mid-animation and replay the slide-up.
+  const prepareInFlight = useRef(false);
   const prepareAndShow = useCallback(async () => {
+    if (prepareInFlight.current) return;
+    prepareInFlight.current = true;
+    try {
+      await runPrepare();
+    } finally {
+      prepareInFlight.current = false;
+    }
+  }, []);
+  const runPrepare = useCallback(async () => {
     usePanel.setState({
       query: "",
       searchOpen: false,
