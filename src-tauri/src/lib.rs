@@ -142,6 +142,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::hide_overlay,
+            commands::overlay_ready,
             commands::debug_log,
             commands::recent_clips,
             commands::view_clips,

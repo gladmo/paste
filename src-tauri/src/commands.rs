@@ -21,6 +21,12 @@ pub fn hide_overlay(app: AppHandle) {
     crate::overlay::hide(&app);
 }
 
+/// The overlay UI finished resetting and loading data; reveal the panel.
+#[tauri::command]
+pub fn overlay_ready(app: AppHandle) {
+    crate::overlay::ready(&app);
+}
+
 /// Temp debug bridge: frontend logs what it renders.
 #[tauri::command]
 pub fn debug_log(line: String) {

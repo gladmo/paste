@@ -44,6 +44,13 @@ static LAST_FRONT: Mutex<Option<i32>> = Mutex::new(None);
 static SHOWN_AT: Mutex<Option<Instant>> = Mutex::new(None);
 const RESIGN_GRACE: Duration = Duration::from_millis(300);
 
+/// Prepare-then-show: `show()` only asks the webview to reset + refetch
+/// ("overlay:show"); the panel is actually revealed by `complete_show`
+/// when the webview reports readiness (or after a short fallback). This
+/// keeps stale content from flashing when the panel reappears.
+static SHOW_PENDING: Mutex<bool> = Mutex::new(false);
+const SHOW_FALLBACK: Duration = Duration::from_millis(250);
+
 /// Record the frontmost app if it is not us. Called when the panel shows
 /// (the app the user was just using) and when the panel resigns key status
 /// (the app the user clicked away to). Never clobbers the stored target
@@ -197,6 +204,29 @@ pub fn show(app: &AppHandle) {
     crate::paste::log_info("[overlay] show");
     capture_target();
     position_bottom(app);
+    if let Ok(mut pending) = SHOW_PENDING.lock() {
+        *pending = true;
+    }
+    // Ask the webview to reset state and reload data while the panel is
+    // still hidden; it reveals the panel via the `overlay_ready` command.
+    if let Some(window) = app.get_webview_window(PANEL_LABEL) {
+        let _ = window.emit("overlay:show", ());
+    }
+    // Never leave the panel stuck hidden if the webview is slow or dead.
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(SHOW_FALLBACK);
+        complete_show(&handle);
+    });
+}
+
+/// Reveal the panel if a show is still pending. Returns whether this call
+/// performed the reveal (first consumer wins; later calls are no-ops).
+fn complete_show(app: &AppHandle) -> bool {
+    let was_pending = SHOW_PENDING.lock().map(|mut p| std::mem::replace(&mut *p, false)).unwrap_or(false);
+    if !was_pending {
+        return false;
+    }
     let handle = app.clone();
     with_panel_on_main(app, move || {
         let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) else {
@@ -207,14 +237,24 @@ pub fn show(app: &AppHandle) {
         if let Ok(mut shown) = SHOWN_AT.lock() {
             *shown = Some(Instant::now());
         }
-        if let Some(window) = handle.get_webview_window(PANEL_LABEL) {
-            let _ = window.emit("overlay:show", ());
-        }
     });
+    true
+}
+
+/// Called by the frontend (`overlay_ready`) once the UI is reset and the
+/// data is loaded — the panel is revealed right then, so the user never
+/// sees the previous state flash before the fade-in.
+pub fn ready(app: &AppHandle) {
+    if complete_show(app) {
+        crate::paste::log_info("[overlay] ready → show");
+    }
 }
 
 pub fn hide(app: &AppHandle) {
     crate::paste::log_info("[overlay] hide");
+    if let Ok(mut pending) = SHOW_PENDING.lock() {
+        *pending = false;
+    }
     if let Ok(mut last) = LAST_FRONT.lock() {
         *last = None;
     }

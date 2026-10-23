@@ -113,12 +113,6 @@ function SelectionBar() {
 }
 
 export function Overlay() {
-  // Dev-only: the hidden panel's WebView misses HMR updates (page suspended),
-  // so every summon reloads to guarantee fresh code.
-  const reloadedOnShow =
-    typeof sessionStorage !== "undefined" && sessionStorage.getItem("paste:dev-reloaded") === "1";
-  if (reloadedOnShow) sessionStorage.removeItem("paste:dev-reloaded");
-
   const t = useT();
   const fadeOut = useFadeOut();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -168,38 +162,51 @@ export function Overlay() {
   }, [query, view, boardId]);
   useEffect(() => initPanelListeners(), []);
 
-  // overlay:show resets the whole panel state.
+  // Prepare-then-show: reset state and (re)load data while the panel is
+  // still hidden, tell Rust to reveal it, and only then fade in — the user
+  // never sees the previous summon's content flash before the animation.
+  const prepareAndShow = useCallback(async () => {
+    usePanel.setState({
+      query: "",
+      searchOpen: false,
+      view: "history",
+      boardId: null,
+      active: 0,
+      metaDown: false,
+      selecting: false,
+      selected: [],
+      anim: 0,
+    });
+    if (listRef.current) listRef.current.scrollLeft = 0;
+    await Promise.all([usePanel.getState().refresh(), usePanel.getState().refreshBoards()]);
+    await invoke("overlay_ready").catch(() => {});
+    requestAnimationFrame(() => requestAnimationFrame(() => usePanel.setState({ anim: 1 })));
+  }, []);
+
   useEffect(() => {
     const off = listen("overlay:show", () => {
       if (import.meta.env.DEV) {
-        sessionStorage.setItem("paste:dev-reloaded", "1");
+        // The hidden panel's WebView misses HMR updates, so reload to
+        // guarantee fresh code. The reload happens while the panel is
+        // still hidden; the mount effect below completes the show.
         window.location.reload();
         return;
       }
-      usePanel.setState({
-        query: "",
-        searchOpen: false,
-        view: "history",
-        boardId: null,
-        active: 0,
-        metaDown: false,
-        selecting: false,
-        selected: [],
-        anim: 0,
-      });
-      void usePanel.getState().refresh();
-      void usePanel.getState().refreshBoards();
-      if (listRef.current) listRef.current.scrollLeft = 0;
-      requestAnimationFrame(() => requestAnimationFrame(() => usePanel.setState({ anim: 1 })));
+      void prepareAndShow();
     });
     const offErase = listen("menu:erase-history", () => {
       setConfirmErase(true);
     });
+    // Run once per page load. Completes a show whose event raced the page
+    // load (or the dev reload): Rust keeps the show pending until
+    // `overlay_ready`, which is idempotent. When nothing is pending this
+    // only pre-warms the data for the first summon.
+    void prepareAndShow();
     return () => {
       off.then((fn) => fn());
       offErase.then((fn) => fn());
     };
-  }, []);
+  }, [prepareAndShow]);
 
   // Keep the active card in view.
   useEffect(() => {
