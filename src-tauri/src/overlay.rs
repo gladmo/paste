@@ -37,6 +37,12 @@ static LAST_TARGET: Mutex<Option<i32>> = Mutex::new(None);
 /// not us, the user clicked away and the panel closes.
 static LAST_FRONT: Mutex<Option<i32>> = Mutex::new(None);
 
+/// Most recent app other than ourselves that was frontmost. When the panel
+/// is summoned while our own app is frontmost (e.g. right after using the
+/// Settings window or the tray), pasting must still go to the app the user
+/// actually works in — this remembers it.
+static LAST_NON_SELF_FRONT: Mutex<Option<i32>> = Mutex::new(None);
+
 /// When the panel was last shown. macOS briefly reshuffles the key window
 /// right after a non-activating panel grabs key focus while its app is not
 /// active; resign notifications inside this grace window are ignored so the
@@ -60,17 +66,25 @@ const SHOW_FALLBACK: Duration =
 /// (the app the user clicked away to). Never clobbers the stored target
 /// while we are still the frontmost app ourselves.
 fn capture_target() {
-    let Some(app) = NSWorkspace::sharedWorkspace().frontmostApplication() else {
+    let front = NSWorkspace::sharedWorkspace().frontmostApplication();
+    // Our own app frontmost (Settings/tray was just used) or no info at all:
+    // fall back to the last app the user actually worked in, so quick paste
+    // and double-click still paste somewhere useful instead of nowhere.
+    let pid = match front
+        .as_ref()
+        .map(|app| app.processIdentifier())
+        .filter(|pid| *pid != std::process::id() as i32)
+    {
+        Some(pid) => Some(pid),
+        None => LAST_NON_SELF_FRONT.lock().ok().and_then(|g| *g),
+    };
+    let Some(pid) = pid else {
         return;
     };
-    let pid = app.processIdentifier();
-    if pid == std::process::id() as i32 {
-        return;
-    }
-    let name = app
-        .localizedName()
-        .map(|n| n.to_string())
-        .unwrap_or_else(|| "<unknown>".into());
+    let name = front
+        .as_ref()
+        .and_then(|app| app.localizedName().map(|n| n.to_string()))
+        .unwrap_or_else(|| "<fallback>".into());
     crate::paste::log_info(&format!("[overlay] target app: {name} pid={pid}"));
     if let Ok(mut last) = LAST_TARGET.lock() {
         *last = Some(pid);
@@ -160,16 +174,23 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         let handle = app.clone();
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(250));
+            let Some(front) = NSWorkspace::sharedWorkspace().frontmostApplication() else {
+                continue;
+            };
+            let front_pid = front.processIdentifier();
+            // Remember the latest app other than us the user worked in —
+            // the paste target fallback for "summoned while we are frontmost".
+            if front_pid != std::process::id() as i32 {
+                if let Ok(mut last) = LAST_NON_SELF_FRONT.lock() {
+                    *last = Some(front_pid);
+                }
+            }
             let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) else {
                 continue;
             };
             if !panel.is_visible() {
                 continue;
             }
-            let Some(front) = NSWorkspace::sharedWorkspace().frontmostApplication() else {
-                continue;
-            };
-            let front_pid = front.processIdentifier();
             let known = LAST_FRONT.lock().ok().and_then(|guard| *guard);
             let changed = known.is_some_and(|last| last != front_pid);
             if changed && front_pid != std::process::id() as i32 {

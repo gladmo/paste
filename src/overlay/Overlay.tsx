@@ -324,7 +324,13 @@ export function Overlay() {
 
   const pasteClip = useCallback(
     (id: number, plain = false) => {
-      fadeOut(() => void invoke("paste_clip", { id, plain }));
+      fadeOut(() =>
+        invoke("paste_clip", { id, plain }).catch((err) => {
+          // paste_clip failures used to vanish (no .catch) — surface them to
+          // /tmp/paste.log via the debug bridge so they are diagnosable.
+          void invoke("debug_log", { line: `paste_clip error: ${err}` }).catch(() => {});
+        }),
+      );
     },
     [fadeOut],
   );
