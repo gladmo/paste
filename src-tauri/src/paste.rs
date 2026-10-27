@@ -2,10 +2,6 @@ use std::ffi::c_void;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
-use core_foundation::base::TCFType;
-use core_foundation::boolean::CFBoolean;
-use core_foundation::dictionary::CFDictionary;
-use core_foundation::string::CFString;
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, KeyCode};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use foreign_types::ForeignType;
@@ -28,9 +24,11 @@ extern "C" {
 // (CGEventPost / HID / Session taps) silently fails without it. post_to_pid
 // works without permission but Chromium/Electron renderer processes ignore
 // pid-direct keyboard events, so only global posting reaches them.
+// Permission is granted from the Settings window; the app never auto-prompts
+// (unsigned dev builds change their TCC identity on every rebuild, so a
+// launch-time prompt would reappear endlessly).
 extern "C" {
     fn AXIsProcessTrusted() -> libc::c_uchar;
-    fn AXIsProcessTrustedWithOptions(options: *const c_void) -> libc::c_uchar;
 }
 
 /// Persistent log at /tmp/paste.log — /tmp/paste-run.log has been empty
@@ -50,20 +48,6 @@ pub fn ax_is_trusted() -> bool {
     let trusted = unsafe { AXIsProcessTrusted() != 0 };
     log_info(&format!("[ax] trusted={trusted}"));
     trusted
-}
-
-/// Ask macOS to show the Accessibility permission prompt (System Settings).
-pub fn request_ax_permission() {
-    let key = CFString::new("AXTrustedCheckOptionPrompt");
-    let value = CFBoolean::true_value();
-    let options = CFDictionary::from_CFType_pairs(&[(key, value)]);
-    unsafe {
-        AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef() as *const c_void);
-    }
-    log_info(&format!(
-        "[ax] permission requested, trusted={}",
-        ax_is_trusted()
-    ));
 }
 
 /// Bring the target app back to the front so its key window exists again.

@@ -102,11 +102,13 @@ pub fn run() {
             app.manage(Mutex::new(db));
 
             // Pasting into Chromium/Electron apps requires Accessibility
-            // permission (global CGEventPost). Ask once at startup; the toggle
-            // still works via post_to_pid fallback until it is granted.
-            if !paste::ax_is_trusted() {
-                paste::request_ax_permission();
-            }
+            // permission (global CGEventPost). Only LOG the state at startup —
+            // never auto-prompt: unsigned dev builds get a new TCC identity on
+            // every rebuild, so a startup prompt reappeared at each launch
+            // even after granting. The Settings window has the "Enable
+            // Accessibility" button, and pasting falls back to post_to_pid
+            // until permission is granted.
+            let _ = paste::ax_is_trusted();
 
             #[cfg(target_os = "macos")]
             if let Err(e) = overlay::init(app.handle()) {
