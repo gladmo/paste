@@ -14,13 +14,31 @@ export function inlineStyles(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const styleEl = doc.querySelector("style");
   if (!styleEl) return html;
+  // Clipboard HTML is pasted through half the internet before it gets here
+  // and its <style> text is not guaranteed to be clean CSS: Office/Excel
+  // markup wraps rules in HTML comments (`<!--br {...}-->`), pages ship
+  // /* comments */ inside selectors. Comments are illegal in the selector
+  // strings querySelectorAll parses, so strip them first.
+  const css = (styleEl.textContent ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/<!--/g, "")
+    .replace(/-->/g, "");
   const ruleRe = /([^{}]+)\{([^}]*)\}/g;
   let m: RegExpExecArray | null;
-  while ((m = ruleRe.exec(styleEl.textContent ?? ""))) {
+  while ((m = ruleRe.exec(css))) {
     const selector = m[1].trim();
     const decls = m[2].trim();
     if (!selector || !decls) continue;
-    doc.querySelectorAll(selector).forEach((el) => {
+    let targets: NodeListOf<Element>;
+    try {
+      targets = doc.querySelectorAll(selector);
+    } catch {
+      // At-rule preludes (@font-face, @media conditions) and whatever else
+      // the loose regex matched are not selectors — skip instead of taking
+      // the whole panel down with a DOMException mid-render.
+      continue;
+    }
+    targets.forEach((el) => {
       const existing = el.getAttribute("style") ?? "";
       el.setAttribute("style", existing ? `${existing}; ${decls}` : decls);
     });

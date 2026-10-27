@@ -9,7 +9,7 @@ import { packedToCss } from "../types";
 import type { Clip, PanelView, Pinboard } from "../types";
 import { initPanelListeners, usePanel } from "../stores/panel";
 import { useSettings } from "../stores/settings";
-import { ClipCard } from "./ClipCard";
+import { CardBoundary, ClipCard } from "./ClipCard";
 import { ConfirmDialog, Menu } from "./Menu";
 import type { MenuItem } from "./Menu";
 import { SearchBar } from "./SearchBar";
@@ -652,27 +652,29 @@ export function Overlay() {
                           top: THEME.panel.stripPaddingY,
                         }}
                       >
-                        <ClipCard
-                          clip={clip}
-                          index={i}
-                          isActive={i === active}
-                          showIndex
-                          metaDown={metaDown}
-                          selecting={selecting}
-                          selected={selected.includes(clip.id)}
-                          handlers={{
-                            onActivate: () => setActive(i),
-                            onOpen: () => pasteClip(clip.id),
-                            onContext: (e) => {
-                              e.preventDefault();
-                              if (!selecting) setActive(i);
-                              setClipMenu({ x: e.clientX, y: e.clientY, clip });
-                            },
-                            onTogglePin: () =>
-                              void invoke("toggle_pin", { id: clip.id }).catch(console.error),
-                            onSelectionClick: () => usePanel.getState().toggleSelected(clip.id),
-                          }}
-                        />
+                        <CardBoundary index={i}>
+                          <ClipCard
+                            clip={clip}
+                            index={i}
+                            isActive={i === active}
+                            showIndex
+                            metaDown={metaDown}
+                            selecting={selecting}
+                            selected={selected.includes(clip.id)}
+                            handlers={{
+                              onActivate: () => setActive(i),
+                              onOpen: () => pasteClip(clip.id),
+                              onContext: (e) => {
+                                e.preventDefault();
+                                if (!selecting) setActive(i);
+                                setClipMenu({ x: e.clientX, y: e.clientY, clip });
+                              },
+                              onTogglePin: () =>
+                                void invoke("toggle_pin", { id: clip.id }).catch(console.error),
+                              onSelectionClick: () => usePanel.getState().toggleSelected(clip.id),
+                            }}
+                          />
+                        </CardBoundary>
                       </div>
                     );
                   })}

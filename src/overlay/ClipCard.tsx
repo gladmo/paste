@@ -5,6 +5,57 @@ import { THEME } from "../ui/theme";
 import type { Clip } from "../types";
 import { AppIcon, CardPreview, clipMeta, formatTime } from "./preview";
 
+/**
+ * Per-card error boundary: clipboard content is arbitrary third-party data,
+ * so one malformed clip must degrade to a "preview unavailable" card instead
+ * of unmounting the whole panel — before this, a render-time exception in
+ * any card blanked the panel for the rest of the app's life (the React root
+ * unmounts and nothing but an app restart brings it back).
+ */
+export class CardBoundary extends React.Component<
+  { index: number; children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    void import("@tauri-apps/api/core").then(({ invoke }) =>
+      invoke("debug_log", {
+        line: `[web] card #${this.props.index} failed to render: ${String(error).slice(0, 200)}`,
+      }).catch(() => {}),
+    );
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <UnavailableCard index={this.props.index} />;
+    }
+    return this.props.children;
+  }
+}
+
+function UnavailableCard({ index }: { index: number }) {
+  const t = useT();
+  return (
+    <div
+      data-index={index}
+      className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.03)] text-neutral-500 shadow-xl"
+      style={{ width: THEME.card.width, height: THEME.card.height }}
+    >
+      <svg className="h-8 w-8 opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+        <rect x="8" y="2" width="8" height="4" rx="1" />
+        <path d="m9 14 6-6M15 14l-6-6" />
+      </svg>
+      <p className="px-4 text-center text-[13px] font-medium">{t("replica.preview.unavailable")}</p>
+    </div>
+  );
+}
+
 /** Small monochrome content-type glyph (Paste Stack rows reuse it). */
 export function TypeIcon({ type, size = 12 }: { type: string; size?: number }) {
   const common = {
