@@ -474,7 +474,15 @@ fn file_meta(paths: &[String]) -> String {
                     continue;
                 }
                 set_last_seen(&bytes);
+                let byte_len = bytes.len();
                 let Some(rich) = rich_from_bytes(&app, bytes, is_rtf) else {
+                    // Conversion (textutil) failed: the clip is dropped, not
+                    // retried — but a capture that never reaches the history
+                    // must at least leave a trace, or it looks like the
+                    // watcher silently died.
+                    crate::paste::log_info(&format!(
+                        "[clipboard] rich capture failed ({byte_len} bytes, rtf={is_rtf}), dropped"
+                    ));
                     continue;
                 };
                 let inserted = app

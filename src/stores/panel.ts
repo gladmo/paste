@@ -91,6 +91,7 @@ export const usePanel = create<PanelState>((set, get) => ({
 
   refresh: async () => {
     const { view, boardId, query } = get();
+    const t0 = performance.now();
     try {
       const rows = await invoke<Clip[]>("view_clips", {
         view,
@@ -99,8 +100,20 @@ export const usePanel = create<PanelState>((set, get) => ({
         limit: 200,
       });
       set({ clips: rows, active: 0 });
+      // The panel reveals via overlay_ready as soon as this resolves; a load
+      // slower than the 250ms Rust reveal fallback shows up as "panel opens
+      // empty, cards pop in late" — make that state visible in /tmp/paste.log.
+      const ms = performance.now() - t0;
+      if (ms > 250) {
+        void invoke("debug_log", {
+          line: `[web] view_clips slow: ${rows.length} rows in ${ms.toFixed(0)}ms`,
+        }).catch(() => {});
+      }
     } catch (e) {
       console.error("view_clips failed", e);
+      void invoke("debug_log", {
+        line: `[web] view_clips FAILED after ${(performance.now() - t0).toFixed(0)}ms: ${String(e).slice(0, 300)}`,
+      }).catch(() => {});
     }
   },
 

@@ -241,7 +241,12 @@ pub fn show(app: &AppHandle) {
     let handle = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(SHOW_FALLBACK);
-        complete_show(&handle);
+        if complete_show(&handle) {
+            // The webview lost the race (or never answered): the panel is now
+            // visible with whatever state its page last had. Make that state
+            // diagnosable instead of a silent blank panel.
+            crate::paste::log_info("[overlay] fallback reveal (webview did not answer in time)");
+        }
     });
 }
 

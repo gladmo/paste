@@ -214,7 +214,26 @@ export function Overlay() {
       anim: 0,
     });
     if (listRef.current) listRef.current.scrollLeft = 0;
-    await Promise.all([usePanel.getState().refresh(), usePanel.getState().refreshBoards()]);
+    // overlay_ready must ALWAYS be sent: the panel is only revealed by it (or
+    // the 250ms Rust fallback, which shows an empty panel). If a data load
+    // hangs — wedged mutex, stuck IPC — reveal anyway with whatever state we
+    // have and leave a trace, instead of a silent blank panel forever.
+    const DATA_TIMEOUT = 2000;
+    let timedOut = false;
+    await Promise.race([
+      Promise.all([usePanel.getState().refresh(), usePanel.getState().refreshBoards()]),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          timedOut = true;
+          resolve();
+        }, DATA_TIMEOUT);
+      }),
+    ]);
+    if (timedOut) {
+      void invoke("debug_log", {
+        line: `[web] prepare: data load exceeded ${DATA_TIMEOUT}ms, revealing anyway (clips=${usePanel.getState().clips.length})`,
+      }).catch(() => {});
+    }
     // Rust reveals the panel here and answers with `overlay:revealed`,
     // which starts the fade-in — no guessing when the window is visible.
     await invoke("overlay_ready").catch(() => {});
