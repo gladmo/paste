@@ -15,6 +15,11 @@ window.addEventListener("error", (e) => {
 window.addEventListener("unhandledrejection", (e) => {
   dbg(`[web] rejection: ${String(e.reason?.stack ?? e.reason).slice(0, 500)}`);
 });
+// Page-liveness marker: when the panel ever appears completely blank, this
+// line (or its absence) in /tmp/paste.log tells "page never loaded" apart
+// from "page loaded but data hung" — the two failure classes look identical
+// on screen.
+dbg("[web] page up");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
