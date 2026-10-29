@@ -226,6 +226,50 @@ impl Db {
                                      copied_at, pinned, source_app, source_name, pinned_at, \
                                      pinboard_id, display_order, meta";
 
+    /// Panel/list queries select every CLIP_COLS position except the heavy
+    /// `rtf` blob (kept as NULL to preserve row_to_clip's positional map):
+    /// the panel never renders RTF — it keeps the HTML in `content` — while
+    /// get_clip returns the full row for paste-back. Loading the multi-MB
+    /// base64 blobs read SQLite overflow pages for nothing: view_clips
+    /// measured 300ms–2s on a 31MB history, pushing the overlay into its
+    /// 250ms fallback-reveal regime.
+    const CLIP_COLS_LEAN: [&'static str; 14] = [
+        "id",
+        "content_type",
+        "content",
+        "plain_content",
+        "NULL as rtf",
+        "title",
+        "copied_at",
+        "pinned",
+        "source_app",
+        "source_name",
+        "pinned_at",
+        "pinboard_id",
+        "display_order",
+        "meta",
+    ];
+
+    /// Comma-joined column list; `prefix` (e.g. "c") qualifies plain columns
+    /// for joined queries — expression columns like `NULL as rtf` must stay
+    /// unqualified.
+    fn cols_sql(prefix: Option<&str>) -> String {
+        Self::CLIP_COLS_LEAN
+            .iter()
+            .map(|col| {
+                if col.contains(' ') {
+                    (*col).to_string()
+                } else {
+                    match prefix {
+                        Some(p) => format!("{p}.{col}"),
+                        None => (*col).to_string(),
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     /// Insert a clip. `plain_content` is the searchable plain-text form
     /// (equal to `content` for text / link / image); `rtf` holds the
     /// original RTF bytes (base64) of rich text clips for format-preserving
@@ -339,20 +383,24 @@ impl Db {
              ELSE c.copied_at END DESC, c.id DESC"
         };
         let q = query.map(str::trim).filter(|q| !q.is_empty());
-        let cols = Self::CLIP_COLS;
         let sql = match q {
             Some(q) if q.chars().count() >= 3 => format!(
-                "SELECT c.{cols} FROM clips_fts f
+                "SELECT {} FROM clips_fts f
                  JOIN clips c ON c.id = f.rowid
                  WHERE clips_fts MATCH ?1 AND {filter}
-                 ORDER BY {order} LIMIT ?2"
+                 ORDER BY {order} LIMIT ?2",
+                Self::cols_sql(Some("c"))
             ),
             Some(_) => format!(
-                "SELECT c.{cols} FROM clips c
+                "SELECT {} FROM clips c
                  WHERE c.plain_content LIKE ?1 ESCAPE '\\' AND {filter}
-                 ORDER BY {order} LIMIT ?2"
+                 ORDER BY {order} LIMIT ?2",
+                Self::cols_sql(Some("c"))
             ),
-            None => format!("SELECT {cols} FROM clips c WHERE {filter} ORDER BY {order} LIMIT ?1"),
+            None => format!(
+                "SELECT {} FROM clips c WHERE {filter} ORDER BY {order} LIMIT ?1",
+                Self::cols_sql(None)
+            ),
         };
         let mut stmt = self.0.prepare(&sql)?;
         let rows = match q {
