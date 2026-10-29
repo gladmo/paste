@@ -62,6 +62,13 @@ impl Db {
         std::fs::create_dir_all(&dir).expect("create app data dir");
         let conn = Connection::open(dir.join("paste.db"))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        Self::init(&conn)?;
+        Ok(Self(conn))
+    }
+
+    /// Create/migrate the schema. Separate from `open` so unit tests can run
+    /// the real migration against an in-memory database.
+    fn init(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS clips (
@@ -200,7 +207,7 @@ impl Db {
                 "#,
             )?;
         }
-        Ok(Self(conn))
+        Ok(())
     }
 
     fn row_to_clip(row: &rusqlite::Row) -> rusqlite::Result<Clip> {
@@ -305,6 +312,35 @@ impl Db {
             params![content_type, content, plain_content, rtf, title, meta, copied_at, source_app, source_name],
         )?;
         Ok(Some(self.0.last_insert_rowid()))
+    }
+
+    /// Pasting makes the clip "current" again, like the original app: bump
+    /// `copied_at` to now so the card returns to the front of the history,
+    /// and drop other *visible-history* rows with identical content so the
+    /// pasted card is never shown twice. Pinned duplicates and copies that
+    /// live in a pinboard are kept — they are deliberate user states, not
+    /// history clutter.
+    pub fn touch_and_dedup(&mut self, id: i64) -> rusqlite::Result<()> {
+        let key = self
+            .0
+            .query_row(
+                "SELECT content_type, content FROM clips WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let Some((content_type, content)) = key else {
+            return Ok(());
+        };
+        self.0
+            .execute("UPDATE clips SET copied_at = ?1 WHERE id = ?2", params![now_ms(), id])?;
+        self.0.execute(
+            "DELETE FROM clips
+             WHERE id != ?1 AND content_type = ?2 AND content = ?3
+               AND pinned = 0 AND pinboard_id IS NULL",
+            params![id, content_type, content],
+        )?;
+        Ok(())
     }
 
     pub fn set_title(&self, id: i64, title: Option<&str>) -> rusqlite::Result<()> {
@@ -584,5 +620,69 @@ impl Db {
             .execute("DELETE FROM pinboards WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Real schema on an in-memory database (same migration `open` runs).
+    fn mem_db() -> Db {
+        let conn = Connection::open_in_memory().unwrap();
+        Db::init(&conn).unwrap();
+        Db(conn)
+    }
+
+    fn insert(db: &mut Db, content: &str) -> i64 {
+        db.insert("text", content, content, None, None, None, None, None)
+            .unwrap()
+            .expect("non-consecutive insert always stores")
+    }
+
+    #[test]
+    fn touch_and_dedup_moves_pasted_clip_to_front_and_removes_duplicates() {
+        let mut db = mem_db();
+        let a = insert(&mut db, "A");
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let b = insert(&mut db, "B");
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let dup = insert(&mut db, "A"); // same content, copied again later
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let c = insert(&mut db, "C"); // separator: insert() dedups consecutives
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let pinned_dup = insert(&mut db, "A");
+        db.toggle_pin(pinned_dup).unwrap();
+
+        db.touch_and_dedup(a).unwrap();
+
+        // History order: pinned items lead, then the freshly-pasted card,
+        // then the rest by copied_at. The unpinned duplicate is gone; the
+        // pinned duplicate survives.
+        let ids: Vec<i64> = db.history(None, 10).unwrap().iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![pinned_dup, a, c, b]);
+        assert!(!ids.contains(&dup));
+    }
+
+    #[test]
+    fn touch_and_dedup_keeps_pinboard_copies_and_other_content() {
+        let mut db = mem_db();
+        let a = insert(&mut db, "A");
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let b = insert(&mut db, "B");
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let board_copy = insert(&mut db, "A");
+        let board = db.create_pinboard("Work", 0x333333).unwrap();
+        db.move_clip_to_pinboard(board_copy, Some(board.id)).unwrap();
+
+        db.touch_and_dedup(a).unwrap();
+
+        let ids: Vec<i64> = db.history(None, 10).unwrap().iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![a, b]);
+        let board_rows = db.query_view("board", Some(board.id), None, 10).unwrap();
+        assert_eq!(
+            board_rows.iter().map(|r| r.id).collect::<Vec<_>>(),
+            vec![board_copy]
+        );
     }
 }

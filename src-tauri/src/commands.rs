@@ -382,6 +382,12 @@ pub fn stack_paste(app: AppHandle, state: DbState<'_>, id: i64) -> Result<(), St
     let settings = crate::settings::load(&app);
     write_clip(&app, &clip, settings.always_plain_text)?;
     crate::pause::play_paste(&app);
+    // Pasting moves the clip to the front of the history, deduping cards
+    // (same rule as the main panel's paste_clip).
+    if let Ok(mut db) = app.state::<Mutex<Db>>().lock() {
+        let _ = db.touch_and_dedup(id);
+    }
+    let _ = app.emit("clips:updated", ());
     crate::stack::hide(&app);
     if settings.direct_paste {
         std::thread::spawn(move || {
@@ -413,6 +419,13 @@ pub fn paste_clip(
     let plain = plain.unwrap_or(false) || settings.always_plain_text;
     write_clip(&app, &clip, plain)?;
     crate::pause::play_paste(&app);
+
+    // Pasting makes the clip current again: the card moves to the front of
+    // the history and duplicate cards are removed (original-app behavior).
+    if let Ok(mut db) = app.state::<Mutex<Db>>().lock() {
+        let _ = db.touch_and_dedup(id);
+    }
+    let _ = app.emit("clips:updated", ());
 
     // Animated hide (webview fades via the overlay:hide event); the receiver
     // resolves once panel.hide() really executed on the main thread.
