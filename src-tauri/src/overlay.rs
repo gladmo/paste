@@ -285,7 +285,13 @@ pub fn ready(app: &AppHandle) {
     }
 }
 
-pub fn hide(app: &AppHandle) {
+/// Hide the panel and report when it is actually gone: the receiver
+/// resolves only after `panel.hide()` ran on the main thread. The paste
+/// path waits on it — posting the synthetic ⌘V while the panel webview can
+/// still be the key window sends the keystroke into the (transparent,
+/// fading) webview instead of the target app's caret.
+fn hide_inner(app: &AppHandle) -> std::sync::mpsc::Receiver<()> {
+    let (tx, rx) = std::sync::mpsc::channel();
     crate::paste::log_info("[overlay] hide");
     if let Ok(mut pending) = SHOW_PENDING.lock() {
         *pending = false;
@@ -299,21 +305,47 @@ pub fn hide(app: &AppHandle) {
         if let Some(window) = &window {
             let _ = window.emit("overlay:hide", ());
         }
-        let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) else {
-            return;
-        };
-        panel.hide();
+        if let Ok(panel) = handle.get_webview_panel(PANEL_LABEL) {
+            panel.hide();
+        }
+        let _ = tx.send(());
     });
+    rx
 }
 
-/// Hide with the frontend fade-out animation: notify the webview, wait for
-/// the transition, then actually hide the panel.
-fn hide_with_animation(app: &AppHandle) {
+pub fn hide(app: &AppHandle) {
+    let _ = hide_inner(app);
+}
+
+/// Hide with the frontend fade-out animation: notify the webview (its panel
+/// store sets anim 0, playing the fade), wait for the transition, then
+/// actually hide. Returns the hide-completion receiver (see `hide_inner`) so
+/// callers that act right after the close — the paste ⌘V — can order
+/// themselves against the real panel.hide(), not a fixed sleep.
+pub fn hide_with_animation(app: &AppHandle) -> std::sync::mpsc::Receiver<()> {
     if let Some(window) = app.get_webview_window(PANEL_LABEL) {
         let _ = window.emit("overlay:hide", ());
     }
     std::thread::sleep(Duration::from_millis(170));
-    hide(app);
+    hide_inner(app)
+}
+
+/// Log what a synthetic keystroke would hit right now: whether the overlay
+/// is still on screen and which app is frontmost. Paste-delivery failures
+/// are invisible to the app (CGEventPost gives no feedback), so this is the
+/// only way /tmp/paste.log can tell "posted at a hidden panel" apart from
+/// "posted at the target app but ignored".
+pub fn log_focus_state(app: &AppHandle) {
+    let visible = is_visible(app);
+    let front = NSWorkspace::sharedWorkspace().frontmostApplication();
+    let name = front
+        .as_ref()
+        .and_then(|app| app.localizedName().map(|n| n.to_string()))
+        .unwrap_or_else(|| "<none>".into());
+    let pid = front.as_ref().map(|app| app.processIdentifier());
+    crate::paste::log_info(&format!(
+        "[paste] pre-⌘V: panel_visible={visible} frontmost={name} pid={pid:?}"
+    ));
 }
 
 pub fn is_visible(app: &AppHandle) -> bool {

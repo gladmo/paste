@@ -33,13 +33,19 @@ extern "C" {
 
 /// Persistent log at /tmp/paste.log — /tmp/paste-run.log has been empty
 /// (nohup buffering), so write paste diagnostics to a file explicitly.
+/// Every line is prefixed with the elapsed time since app start: paste/hide
+/// ordering bugs are pure timing questions, and untimestamped lines cannot
+/// sequence them after the fact.
 pub fn log_info(msg: &str) {
+    use std::sync::OnceLock;
+    static START: OnceLock<Instant> = OnceLock::new();
+    let start = START.get_or_init(Instant::now);
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open("/tmp/paste.log")
     {
-        let _ = writeln!(f, "{msg}");
+        let _ = writeln!(f, "[+{:>9.3}s] {msg}", start.elapsed().as_secs_f64());
     }
 }
 

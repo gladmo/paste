@@ -15,10 +15,12 @@ fn map_db_err(e: rusqlite::Error) -> String {
     e.to_string()
 }
 
-/// Hide the overlay panel (used by the frontend, e.g. on Esc).
+/// Hide the overlay panel with the fade-out animation (used by the frontend,
+/// e.g. on Esc — Rust owns the timing so the close never depends on webview
+/// timers, which a hidden WKWebView suspends).
 #[tauri::command]
 pub fn hide_overlay(app: AppHandle) {
-    crate::overlay::hide(&app);
+    let _ = crate::overlay::hide_with_animation(&app);
 }
 
 /// The overlay UI finished resetting and loading data; reveal the panel.
@@ -412,18 +414,29 @@ pub fn paste_clip(
     write_clip(&app, &clip, plain)?;
     crate::pause::play_paste(&app);
 
-    crate::overlay::hide(&app);
+    // Animated hide (webview fades via the overlay:hide event); the receiver
+    // resolves once panel.hide() really executed on the main thread.
+    let target = crate::overlay::target_pid();
+    let hidden = crate::overlay::hide_with_animation(&app);
 
     if !settings.direct_paste {
         // "To clipboard" paste mode: only copy, let the user paste manually.
         return Ok(());
     }
 
-    // Wait for the previously active app to regain key window status, then
-    // post ⌘V directly to the app that was frontmost before the overlay.
-    let target = crate::overlay::target_pid();
+    let handle = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(120));
+        // Order the ⌘V against the ACTUAL panel hide, not a fixed sleep:
+        // while the panel webview is still the key window the synthetic
+        // keystroke lands in the fading webview instead of the target app.
+        if hidden
+            .recv_timeout(std::time::Duration::from_millis(900))
+            .is_err()
+        {
+            crate::paste::log_info("[paste] panel hide not confirmed within 900ms");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        crate::overlay::log_focus_state(&handle);
         crate::paste::send_paste(target);
     });
 

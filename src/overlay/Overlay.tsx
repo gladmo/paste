@@ -37,19 +37,12 @@ const MOD_KEY_NAMES: Record<string, string[]> = {
   shift: ["Shift", "ShiftLeft", "ShiftRight"],
 };
 
-/** Fade the panel out, then run the action (hide / paste). */
-function useFadeOut() {
-  const closingRef = useRef(false);
-  return useCallback((then: () => void) => {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    usePanel.setState({ anim: 0 });
-    setTimeout(() => {
-      closingRef.current = false;
-      then();
-    }, 160);
-  }, []);
-}
+// NOTE: closing/pasting actions must never be gated behind a webview
+// setTimeout (e.g. a 160ms "fade then act" chain). A hidden WKWebView
+// suspends script timers, so the delayed action silently never runs and a
+// latch guarding it stays stuck until the next app launch. The fade-out is
+// driven by Rust instead: paste_clip / hide_overlay emit overlay:hide (the
+// panel store sets anim 0) and hide the panel after the transition.
 
 function EmptyState({ view, query }: { view: PanelView; query: string }) {
   const t = useT();
@@ -114,7 +107,6 @@ function SelectionBar() {
 
 export function Overlay() {
   const t = useT();
-  const fadeOut = useFadeOut();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
@@ -188,20 +180,15 @@ export function Overlay() {
   // Prepare-then-show: reset state and (re)load data while the panel is
   // still hidden, tell Rust to reveal it, and only then fade in — the user
   // never sees the previous summon's content flash before the animation.
-  // Single-flight: StrictMode double-invokes mount effects and an
-  // overlay:show can race the mount prepare; a second concurrent prepare
-  // would reset anim mid-animation and replay the slide-up.
-  const prepareInFlight = useRef(false);
-  const prepareAndShow = useCallback(async () => {
-    if (prepareInFlight.current) return;
-    prepareInFlight.current = true;
-    try {
-      await runPrepare();
-    } finally {
-      prepareInFlight.current = false;
-    }
-  }, []);
-  const runPrepare = useCallback(async () => {
+  //
+  // Summon generations: every overlay:show runs the synchronous reset
+  // immediately and bumps the generation; a prepare still awaiting slow data
+  // is superseded (its late overlay_ready is dropped) instead of dropping
+  // the NEW summon — the old single-flight guard once swallowed a
+  // re-summon's scroll/state reset whenever the previous data load hung
+  // around, so the panel reopened at the previous scroll position.
+  const summonGen = useRef(0);
+  const resetForSummon = useCallback(() => {
     usePanel.setState({
       query: "",
       searchOpen: false,
@@ -214,30 +201,42 @@ export function Overlay() {
       anim: 0,
     });
     if (listRef.current) listRef.current.scrollLeft = 0;
-    // overlay_ready must ALWAYS be sent: the panel is only revealed by it (or
-    // the 250ms Rust fallback, which shows an empty panel). If a data load
-    // hangs — wedged mutex, stuck IPC — reveal anyway with whatever state we
-    // have and leave a trace, instead of a silent blank panel forever.
-    const DATA_TIMEOUT = 2000;
-    let timedOut = false;
-    await Promise.race([
-      Promise.all([usePanel.getState().refresh(), usePanel.getState().refreshBoards()]),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          timedOut = true;
-          resolve();
-        }, DATA_TIMEOUT);
-      }),
-    ]);
-    if (timedOut) {
-      void invoke("debug_log", {
-        line: `[web] prepare: data load exceeded ${DATA_TIMEOUT}ms, revealing anyway (clips=${usePanel.getState().clips.length})`,
-      }).catch(() => {});
-    }
-    // Rust reveals the panel here and answers with `overlay:revealed`,
-    // which starts the fade-in — no guessing when the window is visible.
-    await invoke("overlay_ready").catch(() => {});
   }, []);
+  const prepareAndShow = useCallback(
+    async () => {
+      const gen = ++summonGen.current;
+      resetForSummon();
+      // overlay_ready must ALWAYS be sent: the panel is only revealed by it
+      // (or the 250ms Rust fallback, which shows an empty panel). If a data
+      // load hangs — wedged mutex, stuck IPC — reveal anyway with whatever
+      // state we have and leave a trace, instead of a silent blank panel
+      // forever.
+      const DATA_TIMEOUT = 2000;
+      let timedOut = false;
+      await Promise.race([
+        Promise.all([usePanel.getState().refresh(), usePanel.getState().refreshBoards()]),
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, DATA_TIMEOUT);
+        }),
+      ]);
+      if (timedOut) {
+        void invoke("debug_log", {
+          line: `[web] prepare: data load exceeded ${DATA_TIMEOUT}ms, revealing anyway (clips=${usePanel.getState().clips.length})`,
+        }).catch(() => {});
+      }
+      if (gen !== summonGen.current) {
+        // A newer summon superseded this one; it sends its own overlay_ready.
+        return;
+      }
+      // Rust reveals the panel here and answers with `overlay:revealed`,
+      // which starts the fade-in — no guessing when the window is visible.
+      await invoke("overlay_ready").catch(() => {});
+    },
+    [resetForSummon],
+  );
 
   // Dev freshness: the hidden panel's WebView misses vite HMR updates, so
   // reload shortly after the panel hides (page still live then; the load
@@ -253,6 +252,10 @@ export function Overlay() {
     };
     const off = listen("overlay:show", () => {
       cancelDevReload();
+      // Synchronous, unconditional reset — even if a previous prepare is
+      // still awaiting slow data, the panel must open scrolled to the
+      // leftmost card with a clean state (the async prepare supersedes it).
+      resetForSummon();
       void prepareAndShow();
     });
     const offHide = listen("overlay:hide", () => {
@@ -281,7 +284,7 @@ export function Overlay() {
       offRevealed.then((fn) => fn());
       offErase.then((fn) => fn());
     };
-  }, [prepareAndShow]);
+  }, [prepareAndShow, resetForSummon]);
 
   // Keep the active card in view.
   useEffect(() => {
@@ -341,18 +344,17 @@ export function Overlay() {
     };
   }, []);
 
-  const pasteClip = useCallback(
-    (id: number, plain = false) => {
-      fadeOut(() =>
-        invoke("paste_clip", { id, plain }).catch((err) => {
-          // paste_clip failures used to vanish (no .catch) — surface them to
-          // /tmp/paste.log via the debug bridge so they are diagnosable.
-          void invoke("debug_log", { line: `paste_clip error: ${err}` }).catch(() => {});
-        }),
-      );
-    },
-    [fadeOut],
-  );
+  const pasteClip = useCallback((id: number, plain = false) => {
+    // Invoke directly — no fade-out delay. paste_clip plays the animation
+    // itself (overlay:hide → anim 0 → Rust hides after the transition), and
+    // a timer-gated invoke would be lost whenever the webview's timers are
+    // suspended by a racing panel hide.
+    invoke("paste_clip", { id, plain }).catch((err) => {
+      // paste_clip failures used to vanish (no .catch) — surface them to
+      // /tmp/paste.log via the debug bridge so they are diagnosable.
+      void invoke("debug_log", { line: `paste_clip error: ${err}` }).catch(() => {});
+    });
+  }, []);
 
   const switchViewDelta = useCallback(
     (delta: 1 | -1) => {
@@ -402,7 +404,8 @@ export function Overlay() {
         } else if (state.searchOpen) {
           state.setSearchOpen(false);
         } else {
-          fadeOut(() => void invoke("hide_overlay"));
+          // Rust's animated hide drives the fade (overlay:hide → anim 0).
+          void invoke("hide_overlay").catch(() => {});
         }
       } else if (e.key === "a" && e.metaKey) {
         // Select All / Deselect All
@@ -451,7 +454,7 @@ export function Overlay() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clipMenu, fadeOut, pasteClip, setActive, switchViewDelta]);
+  }, [clipMenu, pasteClip, setActive, switchViewDelta]);
 
   // ---- clip context menu ---------------------------------------------------
   const clipMenuItems = useMemo(() => {
