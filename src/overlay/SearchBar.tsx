@@ -45,7 +45,9 @@ export function SearchBar({ focusRef }: { focusRef: React.RefObject<HTMLInputEle
     if (focusRef) focusRef.current = inputRef.current;
     if (expanded && !wasExpanded.current) {
       inputRef.current?.focus();
-      inputRef.current?.select();
+      // No select() here: with a non-empty query the field only opens via
+      // type-to-search (Overlay sets query to the first keystroke), and
+      // selecting-all would let the second keystroke overwrite that char.
     }
     wasExpanded.current = expanded;
   });

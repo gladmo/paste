@@ -233,6 +233,12 @@ export function Overlay() {
       }
       // Rust reveals the panel here and answers with `overlay:revealed`,
       // which starts the fade-in — no guessing when the window is visible.
+      // Reset the scroll again now that the refreshed data has rendered:
+      // the synchronous reset in resetForSummon runs while the webview is
+      // still hidden, and WKWebView does not reliably commit scroll offsets
+      // laid out in that state — the panel used to reopen at the previous
+      // summon's position.
+      if (listRef.current) listRef.current.scrollLeft = 0;
       await invoke("overlay_ready").catch(() => {});
     },
     [resetForSummon],
@@ -267,7 +273,12 @@ export function Overlay() {
       }, 400);
     });
     const offRevealed = listen("overlay:revealed", () => {
-      requestAnimationFrame(() => requestAnimationFrame(() => usePanel.setState({ anim: 1 })));
+      // Belt-and-suspenders: force the newest (leftmost) card into view on
+      // reveal, in case any scroll offset survived the hidden-state reset.
+      requestAnimationFrame(() => {
+        if (listRef.current) listRef.current.scrollLeft = 0;
+        requestAnimationFrame(() => usePanel.setState({ anim: 1 }));
+      });
     });
     const offErase = listen("menu:erase-history", () => {
       setConfirmErase(true);
