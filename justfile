@@ -9,7 +9,13 @@ default:
 install:
     pnpm install
 
+# 一次性创建开发用自签名代码签名证书（稳定身份，TCC 权限不随重编译失效）
+cert:
+    ./tools/make-dev-cert.sh
+
 # 开发模式（热重载, ⇧⌘V 呼出面板）
+# 前置：先跑 `just cert` 并在钥匙串访问中将证书 "Paste-Dev" 设为「始终信任」；
+# 之后每次重编译都会经 tools/codesign-linker.sh 自动用同一证书签名。
 dev: install
     pnpm tauri dev
 
@@ -17,6 +23,11 @@ dev: install
 release: install
     #!/bin/bash
     set -euo pipefail
+    if ! security find-identity -v -p codesigning | grep -q '"Paste-Dev"'; then
+        echo "✘ 未找到代码签名证书 Paste-Dev，请先运行: just cert" >&2
+        exit 1
+    fi
+    export APPLE_SIGNING_IDENTITY="Paste-Dev"
     pnpm tauri build
     echo ""
     echo "✔ 构建产物:"
@@ -32,6 +43,11 @@ release-open: release
 release-universal: install
     #!/bin/bash
     set -euo pipefail
+    if ! security find-identity -v -p codesigning | grep -q '"Paste-Dev"'; then
+        echo "✘ 未找到代码签名证书 Paste-Dev，请先运行: just cert" >&2
+        exit 1
+    fi
+    export APPLE_SIGNING_IDENTITY="Paste-Dev"
     pnpm tauri build --target universal-apple-darwin
     echo ""
     echo "✔ 构建产物:"

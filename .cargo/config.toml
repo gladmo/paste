@@ -1,0 +1,11 @@
+# macOS 目标通过 linker 包装脚本在每次链接后用稳定开发证书签名，
+# 使 TCC（辅助功能等授权）不随重编译失效。证书创建：`just cert`（tools/make-dev-cert.sh）。
+# Linux/其它目标不受影响。
+
+# 注意：相对路径按 .cargo/config.toml 所在目录（仓库根）解析。
+
+[target.aarch64-apple-darwin]
+linker = "tools/codesign-linker.sh"
+
+[target.x86_64-apple-darwin]
+linker = "tools/codesign-linker.sh"
