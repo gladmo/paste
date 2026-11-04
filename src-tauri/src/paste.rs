@@ -1,24 +1,9 @@
-use std::ffi::c_void;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation, KeyCode};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-use foreign_types::ForeignType;
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
-
-// CoreGraphics C API: attach the actual character ("v") to a keyboard event.
-// Events built with CGEventCreateKeyboardEvent have an *empty* unicode
-// string; terminals map keycodes, but every normal text input (browser,
-// chat apps, editors) drops key events without a character.
-#[allow(improper_ctypes)]
-extern "C" {
-    fn CGEventKeyboardSetUnicodeString(
-        event: *const c_void,
-        string_length: isize,
-        unicode_string: *const u16,
-    );
-}
 
 // Accessibility permission (TCC): posting to the global event stream
 // (CGEventPost / HID / Session taps) silently fails without it. post_to_pid
@@ -143,17 +128,13 @@ fn build_key(key: u16, down: bool) -> Option<CGEvent> {
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState).ok()?;
     let event = CGEvent::new_keyboard_event(source, key, down).ok()?;
     event.set_flags(CGEventFlags::CGEventFlagCommand);
-    set_unicode(&event, "v");
+    // Deliberately NO CGEventKeyboardSetUnicodeString here. Verified against
+    // real Chrome 156 (debug-harness/quickpaste): with a unicode string
+    // attached, Chromium routes ⌘V through its text-input path (the event
+    // carries characters) and the paste key-equivalent never fires — the
+    // keydown reaches the page as a trusted ⌘v yet nothing is pasted.
+    // Without the string every app maps keycode+flags instead, and both
+    // Chromium/Electron (Chrome, Feishu) and native apps (GoLand, terminal,
+    // WeChat) paste fine.
     Some(event)
-}
-
-fn set_unicode(event: &CGEvent, chars: &str) {
-    let unicode: Vec<u16> = chars.encode_utf16().collect();
-    unsafe {
-        CGEventKeyboardSetUnicodeString(
-            event.as_ptr() as *const c_void,
-            unicode.len() as isize,
-            unicode.as_ptr(),
-        );
-    }
 }
