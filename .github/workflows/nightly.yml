@@ -1,0 +1,223 @@
+name: Nightly Release
+
+# 每天自动打包并发布 nightly release（UTC 16:00 = 北京时间次日 00:00 触发）。
+# 规则：
+#   - 自上一个 nightly-* release 以来 main 无新提交 → 本次直接跳过，不新建 release；
+#   - 产物为 macOS 三种架构的 .dmg + SHA256SUMS.txt（本应用后端依赖
+#     objc2/core-graphics/tauri-nspanel，仅支持 macOS，无法出 Linux/Windows 包）；
+#   - 也可在 Actions → Nightly Release → Run workflow 手动触发，勾选 force 可无新提交强制发布。
+
+on:
+  schedule:
+    - cron: "0 16 * * *" # UTC 16:00 = 北京时间 00:00
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "无新提交时也强制发布"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+env:
+  # CI 上没有本地开发证书 Paste-Dev（just cert 创建）。设为 "-" 让
+  # tools/codesign-linker.sh 只透传链接、跳过签名，产物保持默认 ad-hoc 签名。
+  PASTE_SIGN_IDENTITY: "-"
+
+jobs:
+  # ---------- 1. 判断自上个 nightly 以来是否有新提交 ----------
+  check:
+    name: 检查是否有新提交
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.meta.outputs.date }}
+      tag: ${{ steps.meta.outputs.tag }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      last_nightly_sha: ${{ steps.meta.outputs.last_nightly_sha }}
+      skip: ${{ steps.meta.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 对比上一个 nightly 指向的提交
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force == true }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          DATE="$(TZ=Asia/Shanghai date +%F)"
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          echo "date=$DATE"           >> "$GITHUB_OUTPUT"
+          echo "tag=nightly-$DATE"    >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+          # 最近一个 nightly-* release 的 tag → 解析它指向的 commit
+          LAST_TAG="$(gh release list --limit 100 --json tagName \
+            --jq '[.[] | select(.tagName | startswith("nightly-")) | .tagName] | first // ""')"
+          LAST_SHA=""
+          if [ -n "$LAST_TAG" ]; then
+            git fetch --quiet --depth=1 origin "refs/tags/$LAST_TAG:refs/tags/__last_nightly"
+            LAST_SHA="$(git rev-parse 'refs/tags/__last_nightly^{commit}')"
+          fi
+          echo "last_nightly_sha=$LAST_SHA" >> "$GITHUB_OUTPUT"
+
+          SKIP=false
+          if [ "$FORCE" != "true" ] && [ -n "$LAST_SHA" ] && [ "$LAST_SHA" = "$HEAD_SHA" ]; then
+            SKIP=true
+          fi
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+
+          if [ "$SKIP" = "true" ]; then
+            echo "### 无新提交，跳过本次 nightly 发布（HEAD \`$SHORT_SHA\` 与上个 nightly \`$LAST_TAG\` 相同）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### 将发布 **nightly $DATE**（\`$SHORT_SHA\`，上个 nightly：${LAST_TAG:-无}）" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ---------- 2. 打包 macOS 三种架构（Apple Silicon 交叉编译 Intel / universal） ----------
+  build-macos:
+    name: 打包 macOS / ${{ matrix.label }}
+    needs: check
+    if: needs.check.outputs.skip != 'true'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            label: Apple Silicon
+            arch: aarch64
+            rustup: aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+            label: Intel
+            arch: x86_64
+            rustup: x86_64-apple-darwin
+          - target: universal-apple-darwin
+            label: 通用 Universal
+            arch: universal
+            rustup: aarch64-apple-darwin x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # 读取 package.json 的 packageManager（pnpm@10）
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustup }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: tauri build（${{ matrix.target }}）
+        run: pnpm tauri build --target ${{ matrix.target }}
+
+      - name: 收集产物并按 nightly 规则重命名
+        env:
+          DATE: ${{ needs.check.outputs.date }}
+        run: |
+          set -euo pipefail
+          src="src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
+          shopt -s nullglob
+          dmgs=("$src"/*.dmg)
+          if [ ${#dmgs[@]} -eq 0 ]; then
+            echo "::error::未在 $src 找到 .dmg 产物"
+            exit 1
+          fi
+          mkdir -p out
+          cp "${dmgs[0]}" "out/Paste-nightly-${DATE}-${{ matrix.arch }}.dmg"
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: out/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------- 3. 汇总产物，创建 prerelease ----------
+  release:
+    name: 发布 Release
+    needs: [check, build-macos]
+    if: needs.check.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    env:
+      DATE: ${{ needs.check.outputs.date }}
+      TAG: ${{ needs.check.outputs.tag }}
+      SHORT_SHA: ${{ needs.check.outputs.short_sha }}
+      LAST_SHA: ${{ needs.check.outputs.last_nightly_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 生成“自上个 nightly 的提交列表”需要历史
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: dmg-*
+          merge-multiple: true
+
+      - name: 生成 SHA256SUMS 与 Release 说明
+        run: |
+          set -euo pipefail
+          cd out
+          ls -lh
+          shasum -a 256 *.dmg > SHA256SUMS.txt
+          cd ..
+
+          {
+            echo "# Nightly $DATE ($SHORT_SHA)"
+            echo
+            echo "## 下载"
+            echo
+            echo "| 文件 | 适用机型 |"
+            echo "| --- | --- |"
+            echo "| Paste-nightly-$DATE-aarch64.dmg | Apple Silicon（M 系列） |"
+            echo "| Paste-nightly-$DATE-x86_64.dmg | Intel 芯片 Mac |"
+            echo "| Paste-nightly-$DATE-universal.dmg | 通用二进制（两种架构均可） |"
+            echo
+            echo "SHA-256 校验和见 SHA256SUMS.txt。"
+            echo
+            echo "## 安装说明"
+            echo
+            echo "- 构建未使用开发者证书（ad-hoc 签名）：首次打开若被 Gatekeeper 拦截，请右键点击 app 选「打开」，或执行："
+            echo "    xattr -dr com.apple.quarantine /Applications/Paste.app"
+            echo "- 首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」中授权（用于 ⌘V 定向粘贴）。"
+            echo
+            echo "## 自上个 nightly 以来的提交"
+            echo
+            if [ -n "$LAST_SHA" ]; then
+              git log --oneline --no-decorate "$LAST_SHA..HEAD" | sed 's/^/- /'
+            else
+              git log --oneline --no-decorate -30 | sed 's/^/- /'
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: 清理同日旧 release（手动重跑场景）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "$TAG" --yes --cleanup-tag || true
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" out/*.dmg out/SHA256SUMS.txt \
+            --title "Nightly $DATE ($SHORT_SHA)" \
+            --notes-file notes.md \
+            --prerelease
