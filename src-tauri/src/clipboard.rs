@@ -13,6 +13,7 @@ use objc2_app_kit::{
     NSPasteboardTypeHTML, NSPasteboardTypeRTF, NSPasteboardTypeTIFF, NSWorkspace,
 };
 use objc2_foundation::{NSData, NSDictionary, NSString};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -260,6 +261,18 @@ fn rich_from_bytes(app: &AppHandle, bytes: Vec<u8>, is_rtf: bool) -> Option<Rich
     })
 }
 
+/// File name of a stored image under `<app_data_dir>/images`: the first
+/// 16 bytes of the PNG's SHA-256. The path is the clip's `content`, i.e.
+/// its identity in the DB — addressing it by content means copying the
+/// same picture again yields the same path, so `Db::insert` finds (and
+/// replaces) the older card instead of adding a second one, and no second
+/// copy of the file is written either.
+fn image_file_name(png: &[u8]) -> String {
+    let digest = Sha256::digest(png);
+    let hex: String = digest[..16].iter().map(|b| format!("{b:02x}")).collect();
+    format!("{hex}.png")
+}
+
 /// Convert TIFF data to PNG bytes and write them to the app data dir.
 /// Returns the absolute path of the stored file.
 fn save_tiff_as_png(tiff: &[u8], app: &AppHandle) -> Result<String, String> {
@@ -280,15 +293,9 @@ fn save_tiff_as_png(tiff: &[u8], app: &AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .join("images");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let name = format!(
-        "{}.png",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock")
-            .as_millis()
-    );
-    let path = dir.join(name);
-    std::fs::write(&path, png.iter().collect::<Vec<u8>>()).map_err(|e| e.to_string())?;
+    let bytes: Vec<u8> = png.iter().collect();
+    let path = dir.join(image_file_name(&bytes));
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -565,4 +572,21 @@ fn file_meta(paths: &[String]) -> String {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::image_file_name;
+
+    #[test]
+    fn image_file_name_addresses_the_content() {
+        // The same picture (same PNG bytes) always maps to the same path, a
+        // different one to a different path.
+        let a = image_file_name(b"png bytes of picture A");
+        assert_eq!(a, image_file_name(b"png bytes of picture A"));
+        assert_ne!(a, image_file_name(b"png bytes of picture B"));
+        assert!(a.ends_with(".png"));
+        // 16 bytes as 32 hex digits, plus the extension.
+        assert_eq!(a.len(), 36);
+    }
 }
